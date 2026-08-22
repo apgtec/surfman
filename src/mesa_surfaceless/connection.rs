@@ -32,6 +32,25 @@ pub struct NativeConnectionWrapper {
 unsafe impl Send for NativeConnectionWrapper {}
 unsafe impl Sync for NativeConnectionWrapper {}
 
+impl NativeConnection {
+    /// Returns the current native connection, if applicable.
+    #[inline]
+    pub fn current() -> Result<NativeConnection, Error> {
+        unsafe {
+            EGL_FUNCTIONS.with(|egl| {
+                let egl_display = egl.GetCurrentDisplay();
+                if egl_display != egl::NO_DISPLAY {
+                    Ok(NativeConnection(Arc::new(NativeConnectionWrapper {
+                        egl_display,
+                    })))
+                } else {
+                    Err(Error::NoCurrentConnection)
+                }
+            })
+        }
+    }
+}
+
 impl Connection {
     /// Opens a surfaceless Mesa display.
     #[inline]
