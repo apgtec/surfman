@@ -44,7 +44,7 @@ use winapi::um::handleapi::INVALID_HANDLE_VALUE;
 use winapi::um::libloaderapi;
 use winapi::um::wingdi::{self, PIXELFORMATDESCRIPTOR};
 use winapi::um::wingdi::{
-    wglDeleteContext, wglGetCurrentContext, wglGetProcAddress, wglMakeCurrent,
+    wglDeleteContext, wglGetCurrentContext, wglGetCurrentDC, wglGetProcAddress, wglMakeCurrent,
 };
 use winapi::um::winuser::{self, COLOR_BACKGROUND, CS_OWNDC, MSG, WM_CLOSE};
 use winapi::um::winuser::{WNDCLASSA, WS_OVERLAPPEDWINDOW};
@@ -446,10 +446,18 @@ impl Device {
     /// The `HGLRC` is not retained, as there is no way to do this in the Win32 API. Therefore, it
     /// is the caller's responsibility to make sure the OpenGL context is not destroyed before this
     /// `Context` is.
+    ///
+    /// The `HGLRC` must be current on this thread, or a `NoCurrentContext` error is returned:
+    /// `surfman` renders with it on a window of its own, which needs the context's pixel format, and
+    /// the DC the context is current on is the only place to find that format.
     pub unsafe fn create_context_from_native_context(
         &self,
         native_context: NativeContext,
     ) -> Result<Context, Error> {
+        if wglGetCurrentContext() != native_context.0 {
+            return Err(Error::NoCurrentContext);
+        }
+
         let mut next_context_id = CREATE_CONTEXT_MUTEX.lock().unwrap();
         let hidden_window = HiddenWindow::new();
 
@@ -457,9 +465,11 @@ impl Device {
         let gl = {
             let hidden_window_dc = hidden_window.get_dc();
             let dc = hidden_window_dc.dc;
+            set_dc_pixel_format(dc, wingdi::GetPixelFormat(wglGetCurrentDC()));
             let _guard = CurrentContextGuard::new();
-            let ok = wglMakeCurrent(dc, native_context.0);
-            assert_ne!(ok, FALSE);
+            if wglMakeCurrent(dc, native_context.0) == FALSE {
+                return Err(Error::MakeCurrentFailed(WindowingApiError::Failed));
+            }
             Gl::from_loader_function(get_proc_address)
         };
 
