@@ -418,8 +418,7 @@ impl Device {
                     return Err(Error::ContextCreationFailed(WindowingApiError::Failed));
                 }
 
-                // Temporarily make the context current.
-                let _guard = CurrentContextGuard::new();
+                // Newly created contexts are left current, as on the other backends.
                 let ok = wglMakeCurrent(dc, glrc);
                 assert_ne!(ok, FALSE);
 
@@ -636,6 +635,10 @@ impl Device {
     #[inline]
     pub fn make_no_context_current(&self) -> Result<(), Error> {
         unsafe {
+            // Releasing nothing fails on some implementations.
+            if wglGetCurrentContext().is_null() {
+                return Ok(());
+            }
             let ok = wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
             if ok != FALSE {
                 Ok(())
