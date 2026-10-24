@@ -1,6 +1,6 @@
 //! A connection to the window server.
 //!
-//! Window server connections are implicit in the Win32 API, so this is a zero-sized type.
+//! Window server connections are implicit in the Win32 API.
 
 use super::device::{Adapter, Device, NativeDevice};
 use super::surface::NativeWidget;
@@ -10,14 +10,22 @@ use crate::GLApi;
 use euclid::default::Size2D;
 
 use std::os::raw::c_void;
+use std::sync::{Arc, Mutex};
 
 use winapi::shared::windef::HWND;
 
 /// Represents a connection to the display server.
 ///
-/// Window server connections are implicit in the Win32 API, so this is a zero-sized type.
+/// Window server connections are implicit in the Win32 API. Without `WGL_NV_DX_interop`, a
+/// connection and its clones also make a share group: generic surfaces are then plain OpenGL
+/// textures, which other contexts read directly, so every context made on a device of this
+/// connection shares objects with the first context such a device made or adopted, unless it is
+/// given another context to share with.
 #[derive(Clone)]
-pub struct Connection;
+pub struct Connection {
+    // The first context's `HGLRC`, or 0 before there is one.
+    pub(crate) gl_share_root: Arc<Mutex<usize>>,
+}
 
 /// An empty placeholder for native connections.
 ///
@@ -29,7 +37,9 @@ impl Connection {
     /// Connects to the default display.
     #[inline]
     pub fn new() -> Result<Connection, Error> {
-        Ok(Connection)
+        Ok(Connection {
+            gl_share_root: Arc::default(),
+        })
     }
 
     /// An alias for `Connection::new()`, present for consistency with other backends.
@@ -79,7 +89,7 @@ impl Connection {
     /// Opens a device.
     #[inline]
     pub fn create_device(&self, adapter: &Adapter) -> Result<Device, Error> {
-        Device::new(adapter)
+        Device::new(self, adapter)
     }
 
     /// Creates a `Device` from a Direct3D 11 device and associated GL/DX interop handle.
@@ -94,7 +104,7 @@ impl Connection {
         &self,
         native_device: NativeDevice,
     ) -> Result<Device, Error> {
-        Device::from_native_device(native_device)
+        Device::from_native_device(self, native_device)
     }
 
     /// Opens the display connection corresponding to the given `DisplayHandle`.
