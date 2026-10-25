@@ -575,13 +575,19 @@ pub(crate) unsafe fn create_pbuffer_surface(
     })
 }
 
-/// A pbuffer of the BGRA `io_surface`, with `EGL_ANGLE_iosurface_client_buffer`.
+/// A pbuffer of the BGRA or RGBA `io_surface`, with `EGL_ANGLE_iosurface_client_buffer`.
 #[cfg(angle_metal)]
-unsafe fn create_io_surface_pbuffer(
+pub(crate) unsafe fn create_io_surface_pbuffer(
     egl_display: EGLDisplay,
     egl_config: EGLConfig,
     io_surface: &IOSurfaceRef,
 ) -> Result<EGLSurface, Error> {
+    // 'RGBA'; surfman's own are 'BGRA'.
+    let internal_format = if io_surface.pixel_format() == 0x52474241 {
+        gl::RGBA
+    } else {
+        gl::BGRA
+    };
     let attributes = [
         egl::WIDTH as EGLint,
         io_surface.width() as EGLint,
@@ -592,7 +598,7 @@ unsafe fn create_io_surface_pbuffer(
         egl::TEXTURE_TARGET as EGLint,
         egl::TEXTURE_2D as EGLint,
         EGL_TEXTURE_INTERNAL_FORMAT_ANGLE as EGLint,
-        gl::BGRA as EGLint,
+        internal_format as EGLint,
         egl::TEXTURE_FORMAT as EGLint,
         egl::TEXTURE_RGBA as EGLint,
         EGL_TEXTURE_TYPE_ANGLE as EGLint,
@@ -618,7 +624,7 @@ unsafe fn create_io_surface_pbuffer(
 
 /// A new texture of the current context that `egl_pbuffer` is bound to.
 #[cfg(angle_metal)]
-unsafe fn bind_pbuffer_to_gl_texture(
+pub(crate) unsafe fn bind_pbuffer_to_gl_texture(
     gl: &Gl,
     egl_display: EGLDisplay,
     egl_pbuffer: EGLSurface,
