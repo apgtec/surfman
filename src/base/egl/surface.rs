@@ -23,6 +23,16 @@ use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
+#[cfg(angle_metal)]
+use crate::base::egl::ffi::{
+    EGL_IOSURFACE_ANGLE, EGL_IOSURFACE_PLANE_ANGLE, EGL_TEXTURE_INTERNAL_FORMAT_ANGLE,
+    EGL_TEXTURE_TYPE_ANGLE,
+};
+#[cfg(angle_metal)]
+use objc2_core_foundation::CFRetained;
+#[cfg(angle_metal)]
+use objc2_io_surface::IOSurfaceRef;
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct ExternalEGLSurfaces {
@@ -57,11 +67,25 @@ pub(crate) enum EGLSurfaceObjects {
         native_window: *const c_void,
         egl_surface: EGLSurface,
     },
+    /// An IOSurface, which ANGLE binds to a texture through a pbuffer.
+    #[cfg(angle_metal)]
+    IOSurface {
+        io_surface: CFRetained<IOSurfaceRef>,
+        egl_display: EGLDisplay,
+        egl_config: EGLConfig,
+        egl_pbuffer: EGLSurface,
+        framebuffer_object: Option<Framebuffer>,
+        texture_object: Option<Texture>,
+        renderbuffers: Renderbuffers,
+    },
 }
 
 pub(crate) struct EGLSurfaceTexture {
     pub(crate) surface: EGLBackedSurface,
     pub(crate) texture_object: Option<Texture>,
+    /// The pbuffer of the surface's IOSurface that the texture is bound to.
+    #[cfg(angle_metal)]
+    pub(crate) egl_pbuffer: EGLSurface,
     pub(crate) phantom: PhantomData<*const ()>,
 }
 
@@ -184,6 +208,62 @@ impl EGLBackedSurface {
         })
     }
 
+    /// A generic surface on a new IOSurface, for ANGLE, which cannot make EGL images of textures
+    /// on Metal.
+    #[cfg(angle_metal)]
+    pub(crate) fn new_io_surface(
+        gl: &Gl,
+        egl_display: EGLDisplay,
+        egl_config: EGLConfig,
+        context_id: ContextID,
+        context_attributes: &ContextAttributes,
+        size: &Size2D<i32>,
+        access: crate::SurfaceAccess,
+    ) -> Result<EGLBackedSurface, Error> {
+        let system_device = crate::base::io_surface::device::Device::new(
+            crate::base::io_surface::device::Adapter {
+                is_low_power: false,
+            },
+        )?;
+        let io_surface = system_device.create_io_surface(size, access);
+
+        unsafe {
+            let egl_pbuffer = create_io_surface_pbuffer(egl_display, egl_config, &io_surface)?;
+            let texture_object = match bind_pbuffer_to_gl_texture(gl, egl_display, egl_pbuffer) {
+                Ok(texture_object) => texture_object,
+                Err(err) => {
+                    EGL_FUNCTIONS.with(|egl| egl.DestroySurface(egl_display, egl_pbuffer));
+                    return Err(err);
+                }
+            };
+
+            let framebuffer_object =
+                gl_utils::create_and_bind_framebuffer(gl, gl::TEXTURE_2D, Some(texture_object));
+            let renderbuffers = Renderbuffers::new(gl, size, context_attributes);
+            renderbuffers.bind_to_current_framebuffer(gl);
+
+            debug_assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE
+            );
+
+            Ok(EGLBackedSurface {
+                context_id,
+                size: *size,
+                objects: EGLSurfaceObjects::IOSurface {
+                    io_surface,
+                    egl_display,
+                    egl_config,
+                    egl_pbuffer,
+                    framebuffer_object: Some(framebuffer_object),
+                    texture_object: Some(texture_object),
+                    renderbuffers,
+                },
+                destroyed: false,
+            })
+        }
+    }
+
     pub(crate) fn to_surface_texture(
         self,
         gl: &Gl,
@@ -192,11 +272,40 @@ impl EGLBackedSurface {
             let egl_image = match self.objects {
                 EGLSurfaceObjects::TextureImage { egl_image, .. } => egl_image,
                 EGLSurfaceObjects::Window { .. } => return Err((Error::WidgetAttached, self)),
+                #[cfg(angle_metal)]
+                EGLSurfaceObjects::IOSurface {
+                    ref io_surface,
+                    egl_display,
+                    egl_config,
+                    ..
+                } => {
+                    // A pbuffer bound to one texture cannot be bound to another, so the surface
+                    // texture has a pbuffer of its own.
+                    let egl_pbuffer =
+                        match create_io_surface_pbuffer(egl_display, egl_config, io_surface) {
+                            Ok(egl_pbuffer) => egl_pbuffer,
+                            Err(err) => return Err((err, self)),
+                        };
+                    return match bind_pbuffer_to_gl_texture(gl, egl_display, egl_pbuffer) {
+                        Ok(texture_object) => Ok(EGLSurfaceTexture {
+                            surface: self,
+                            texture_object: Some(texture_object),
+                            egl_pbuffer,
+                            phantom: PhantomData,
+                        }),
+                        Err(err) => {
+                            EGL_FUNCTIONS.with(|egl| egl.DestroySurface(egl_display, egl_pbuffer));
+                            Err((err, self))
+                        }
+                    };
+                }
             };
             let texture_object = bind_egl_image_to_gl_texture(gl, egl_image);
             Ok(EGLSurfaceTexture {
                 surface: self,
                 texture_object: Some(texture_object),
+                #[cfg(angle_metal)]
+                egl_pbuffer: egl::NO_SURFACE,
                 phantom: PhantomData,
             })
         }
@@ -249,6 +358,29 @@ impl EGLBackedSurface {
                     self.destroyed = true;
                     Ok(Some(mem::replace(native_window, ptr::null())))
                 }
+                #[cfg(angle_metal)]
+                EGLSurfaceObjects::IOSurface {
+                    ref mut egl_pbuffer,
+                    ref mut framebuffer_object,
+                    ref mut texture_object,
+                    ref mut renderbuffers,
+                    ..
+                } => {
+                    gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+                    if let Some(framebuffer) = framebuffer_object.take() {
+                        gl.delete_framebuffer(framebuffer);
+                    }
+                    renderbuffers.destroy(gl);
+
+                    if let Some(texture) = texture_object.take() {
+                        release_pbuffer_from_gl_texture(gl, egl_display, *egl_pbuffer, texture);
+                    }
+                    EGL_FUNCTIONS.with(|egl| egl.DestroySurface(egl_display, *egl_pbuffer));
+                    *egl_pbuffer = egl::NO_SURFACE;
+
+                    self.destroyed = true;
+                    Ok(None)
+                }
             }
         }
     }
@@ -285,6 +417,8 @@ impl EGLBackedSurface {
                     })
                 }
                 EGLSurfaceObjects::TextureImage { .. } => Err(Error::NoWidgetAttached),
+                #[cfg(angle_metal)]
+                EGLSurfaceObjects::IOSurface { .. } => Err(Error::NoWidgetAttached),
             }
         }
     }
@@ -299,6 +433,10 @@ impl EGLBackedSurface {
                     framebuffer_object, ..
                 } => framebuffer_object,
                 EGLSurfaceObjects::Window { .. } => None,
+                #[cfg(angle_metal)]
+                EGLSurfaceObjects::IOSurface {
+                    framebuffer_object, ..
+                } => framebuffer_object,
             },
         }
     }
@@ -307,6 +445,10 @@ impl EGLBackedSurface {
         match self.objects {
             EGLSurfaceObjects::TextureImage { egl_image, .. } => SurfaceID(egl_image as usize),
             EGLSurfaceObjects::Window { egl_surface, .. } => SurfaceID(egl_surface as usize),
+            #[cfg(angle_metal)]
+            EGLSurfaceObjects::IOSurface { ref io_surface, .. } => {
+                SurfaceID(&**io_surface as *const IOSurfaceRef as usize)
+            }
         }
     }
 
@@ -314,6 +456,17 @@ impl EGLBackedSurface {
         match self.objects {
             EGLSurfaceObjects::TextureImage { .. } => Err(Error::NoWidgetAttached),
             EGLSurfaceObjects::Window { native_window, .. } => Ok(native_window),
+            #[cfg(angle_metal)]
+            EGLSurfaceObjects::IOSurface { .. } => Err(Error::NoWidgetAttached),
+        }
+    }
+
+    /// The IOSurface holding the surface's pixels.
+    #[cfg(angle_metal)]
+    pub(crate) fn io_surface(&self) -> Option<CFRetained<IOSurfaceRef>> {
+        match self.objects {
+            EGLSurfaceObjects::IOSurface { ref io_surface, .. } => Some(io_surface.clone()),
+            _ => None,
         }
     }
 
@@ -334,7 +487,14 @@ impl EGLBackedSurface {
                     } => {
                         gl_utils::unbind_framebuffer_if_necessary(gl, framebuffer_object);
                     }
-                    EGLSurfaceObjects::TextureImage { .. } | EGLSurfaceObjects::Window { .. } => {}
+                    #[cfg(angle_metal)]
+                    EGLSurfaceObjects::IOSurface {
+                        framebuffer_object: Some(framebuffer_object),
+                        ..
+                    } => {
+                        gl_utils::unbind_framebuffer_if_necessary(gl, framebuffer_object);
+                    }
+                    _ => {}
                 }
             })
         }
@@ -347,6 +507,8 @@ impl EGLBackedSurface {
                 read: egl_surface,
             },
             EGLSurfaceObjects::TextureImage { .. } => ExternalEGLSurfaces::default(),
+            #[cfg(angle_metal)]
+            EGLSurfaceObjects::IOSurface { .. } => ExternalEGLSurfaces::default(),
         }
     }
 
@@ -357,6 +519,15 @@ impl EGLBackedSurface {
 
 impl EGLSurfaceTexture {
     pub(crate) fn destroy(mut self, gl: &Gl) -> EGLBackedSurface {
+        #[cfg(angle_metal)]
+        if let EGLSurfaceObjects::IOSurface { egl_display, .. } = self.surface.objects {
+            unsafe {
+                if let Some(texture) = self.texture_object.take() {
+                    release_pbuffer_from_gl_texture(gl, egl_display, self.egl_pbuffer, texture);
+                }
+                EGL_FUNCTIONS.with(|egl| egl.DestroySurface(egl_display, self.egl_pbuffer));
+            }
+        }
         if let Some(texture) = self.texture_object.take() {
             unsafe {
                 gl.delete_texture(texture);
@@ -402,6 +573,91 @@ pub(crate) unsafe fn create_pbuffer_surface(
         assert_ne!(egl_surface, egl::NO_SURFACE);
         egl_surface
     })
+}
+
+/// A pbuffer of the BGRA `io_surface`, with `EGL_ANGLE_iosurface_client_buffer`.
+#[cfg(angle_metal)]
+unsafe fn create_io_surface_pbuffer(
+    egl_display: EGLDisplay,
+    egl_config: EGLConfig,
+    io_surface: &IOSurfaceRef,
+) -> Result<EGLSurface, Error> {
+    let attributes = [
+        egl::WIDTH as EGLint,
+        io_surface.width() as EGLint,
+        egl::HEIGHT as EGLint,
+        io_surface.height() as EGLint,
+        EGL_IOSURFACE_PLANE_ANGLE as EGLint,
+        0,
+        egl::TEXTURE_TARGET as EGLint,
+        egl::TEXTURE_2D as EGLint,
+        EGL_TEXTURE_INTERNAL_FORMAT_ANGLE as EGLint,
+        gl::BGRA as EGLint,
+        egl::TEXTURE_FORMAT as EGLint,
+        egl::TEXTURE_RGBA as EGLint,
+        EGL_TEXTURE_TYPE_ANGLE as EGLint,
+        gl::UNSIGNED_BYTE as EGLint,
+        egl::NONE as EGLint,
+    ];
+    EGL_FUNCTIONS.with(|egl| {
+        let egl_pbuffer = egl.CreatePbufferFromClientBuffer(
+            egl_display,
+            EGL_IOSURFACE_ANGLE,
+            io_surface as *const IOSurfaceRef as _,
+            egl_config,
+            attributes.as_ptr(),
+        );
+        if egl_pbuffer == egl::NO_SURFACE {
+            return Err(Error::SurfaceCreationFailed(
+                egl.GetError().to_windowing_api_error(),
+            ));
+        }
+        Ok(egl_pbuffer)
+    })
+}
+
+/// A new texture of the current context that `egl_pbuffer` is bound to.
+#[cfg(angle_metal)]
+unsafe fn bind_pbuffer_to_gl_texture(
+    gl: &Gl,
+    egl_display: EGLDisplay,
+    egl_pbuffer: EGLSurface,
+) -> Result<Texture, Error> {
+    let texture = gl.create_texture().unwrap();
+    let texture_binding = gl.get_parameter_texture(gl::TEXTURE_BINDING_2D);
+    gl.bind_texture(gl::TEXTURE_2D, Some(texture));
+    let bound = EGL_FUNCTIONS.with(|egl| {
+        if egl.BindTexImage(egl_display, egl_pbuffer, egl::BACK_BUFFER as EGLint) == egl::FALSE {
+            return Err(Error::SurfaceTextureCreationFailed(
+                egl.GetError().to_windowing_api_error(),
+            ));
+        }
+        Ok(())
+    });
+    gl.tex_parameter_i32(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+    gl.tex_parameter_i32(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+    gl.tex_parameter_i32(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+    gl.tex_parameter_i32(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+    gl.bind_texture(gl::TEXTURE_2D, texture_binding);
+    match bound {
+        Ok(()) => Ok(texture),
+        Err(err) => {
+            gl.delete_texture(texture);
+            Err(err)
+        }
+    }
+}
+
+#[cfg(angle_metal)]
+unsafe fn release_pbuffer_from_gl_texture(
+    gl: &Gl,
+    egl_display: EGLDisplay,
+    egl_pbuffer: EGLSurface,
+    texture: Texture,
+) {
+    EGL_FUNCTIONS
+        .with(|egl| egl.ReleaseTexImage(egl_display, egl_pbuffer, egl::BACK_BUFFER as EGLint));
+    gl.delete_texture(texture);
 }
 
 #[allow(dead_code)]

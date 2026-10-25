@@ -16,6 +16,8 @@ extern crate log;
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 pub mod angle;
+#[cfg(angle_metal)]
+pub mod angle_metal;
 pub(crate) mod base;
 #[cfg(macos_platform)]
 pub mod cgl;
@@ -28,6 +30,8 @@ mod gl_utils;
 #[cfg(any(android_platform, ohos_platform))]
 pub mod hardware_buffer;
 mod info;
+#[cfg(angle_metal)]
+pub mod macos;
 pub mod macros;
 #[cfg(free_unix)]
 pub mod mesa_surfaceless;
@@ -45,10 +49,12 @@ pub mod x11;
 
 #[cfg(all(windows_platform, angle_default))]
 pub use angle as default;
-#[cfg(macos_platform)]
+#[cfg(all(macos_platform, not(angle_metal)))]
 pub use cgl as default;
 #[cfg(any(android_platform, ohos_platform))]
 pub use hardware_buffer as default;
+#[cfg(angle_metal)]
+pub use macos as default;
 #[cfg(all(x11_platform, not(wayland_default)))]
 pub use unix as default;
 #[cfg(wayland_default)]
