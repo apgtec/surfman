@@ -8,6 +8,8 @@ use std::fmt::{self, Display, Formatter};
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 use crate::angle::surface::AngleSurface;
+#[cfg(angle_metal)]
+use crate::angle_metal::surface::AngleMetalSurface;
 #[cfg(macos_platform)]
 use crate::cgl::surface::CglSurface;
 #[cfg(any(android_platform, ohos_platform))]
@@ -155,6 +157,9 @@ pub enum Surface {
     /// An ANGLE surface for Windows systems.
     #[cfg(all(windows_platform, feature = "sm-angle"))]
     Angle(AngleSurface),
+    /// An ANGLE on Metal surface for macOS systems.
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalSurface),
     /// A surface for Apple systems.
     #[cfg(macos_platform)]
     Cgl(CglSurface),
@@ -177,6 +182,14 @@ pub enum Surface {
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 enum_conversion!(Surface, Angle, AngleSurface, angle, IncompatibleSurface);
+#[cfg(angle_metal)]
+enum_conversion!(
+    Surface,
+    AngleMetal,
+    AngleMetalSurface,
+    angle_metal,
+    IncompatibleSurface
+);
 #[cfg(macos_platform)]
 enum_conversion!(Surface, Cgl, CglSurface, cgl, IncompatibleSurface);
 #[cfg(any(android_platform, ohos_platform))]

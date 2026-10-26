@@ -42,6 +42,26 @@ static EGL_LIBRARY: LazyLock<EGLLibraryWrapper> = LazyLock::new(|| {
     panic!("Unable to load the libEGL shared object");
 });
 
+// ANGLE's, which is optional: only the ANGLE backend uses it, and it fails to connect without it.
+#[cfg(target_os = "macos")]
+static EGL_LIBRARY: LazyLock<EGLLibraryWrapper> = LazyLock::new(|| {
+    for name in [c"@rpath/libEGL.dylib", c"libEGL.dylib"] {
+        unsafe {
+            let handle = dlopen(name.as_ptr(), RTLD_LAZY);
+            if !handle.is_null() {
+                return EGLLibraryWrapper(handle);
+            }
+        }
+    }
+    EGLLibraryWrapper(std::ptr::null_mut())
+});
+
+/// Whether ANGLE's `libEGL.dylib` could be loaded.
+#[cfg(target_os = "macos")]
+pub(crate) fn egl_library_loaded() -> bool {
+    !EGL_LIBRARY.0.is_null()
+}
+
 #[cfg(target_os = "windows")]
 struct EGLLibraryWrapper(HMODULE);
 #[cfg(not(target_os = "windows"))]
@@ -62,6 +82,9 @@ fn get_proc_address(symbol_name: &str) -> *const c_void {
 #[cfg(not(target_os = "windows"))]
 fn get_proc_address(symbol_name: &str) -> *const c_void {
     unsafe {
+        if EGL_LIBRARY.0.is_null() {
+            return std::ptr::null();
+        }
         let symbol_name: CString = CString::new(symbol_name).unwrap();
         let symbol_ptr = symbol_name.as_ptr();
         dlsym(EGL_LIBRARY.0, symbol_ptr).cast_const()

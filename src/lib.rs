@@ -17,6 +17,8 @@ extern crate log;
 pub mod adapter;
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 pub mod angle;
+#[cfg(angle_metal)]
+pub mod angle_metal;
 pub(crate) mod base;
 #[cfg(macos_platform)]
 pub mod cgl;
@@ -32,6 +34,8 @@ mod gl_utils;
 #[cfg(any(android_platform, ohos_platform))]
 pub mod hardware_buffer;
 mod info;
+#[cfg(angle_metal)]
+pub mod macos;
 pub mod macros;
 #[cfg(free_unix)]
 pub mod mesa_surfaceless;
@@ -50,10 +54,12 @@ pub mod x11;
 
 #[cfg(all(windows_platform, angle_default))]
 pub use angle as default;
-#[cfg(macos_platform)]
+#[cfg(all(macos_platform, not(angle_metal)))]
 pub use cgl as default;
 #[cfg(any(android_platform, ohos_platform))]
 pub use hardware_buffer as default;
+#[cfg(angle_metal)]
+pub use macos as default;
 #[cfg(all(x11_platform, not(wayland_default)))]
 pub use unix as default;
 #[cfg(wayland_default)]
@@ -73,12 +79,14 @@ pub(crate) use macros::implement_interfaces;
 
 #[cfg(all(windows_platform, angle_default))]
 pub use angle::{connection::AngleConnection as Connection, device::AngleDevice as Device};
-#[cfg(macos_platform)]
+#[cfg(all(macos_platform, not(angle_metal)))]
 pub use cgl::{connection::CglConnection as Connection, device::CglDevice as Device};
 #[cfg(any(android_platform, ohos_platform))]
 pub use hardware_buffer::{
     connection::HardwareBufferConnection as Connection, device::HardwareBufferDevice as Device,
 };
+#[cfg(angle_metal)]
+pub use macos::{connection::Connection, device::Device};
 #[cfg(all(x11_platform, not(wayland_default)))]
 pub use unix::{connection::Connection, device::Device};
 #[cfg(wayland_default)]
@@ -96,7 +104,7 @@ pub use base::io_surface::device::Device as SystemDevice;
 #[cfg(target_os = "macos")]
 pub use base::io_surface::surface::Surface as SystemSurface;
 
-#[cfg(any(android_platform, angle, free_unix, ohos_platform))]
+#[cfg(any(android_platform, angle, angle_metal, free_unix, ohos_platform))]
 pub use crate::base::egl::context::EglContextDescriptor;
 
 #[cfg(any(

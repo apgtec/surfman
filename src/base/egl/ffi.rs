@@ -2,7 +2,9 @@
 
 #![allow(dead_code)]
 
-use crate::egl::types::{EGLAttrib, EGLBoolean, EGLContext, EGLDeviceEXT, EGLDisplay, EGLSurface};
+use crate::egl::types::{
+    EGLAttrib, EGLBoolean, EGLContext, EGLDeviceEXT, EGLDisplay, EGLSurface, EGLSync,
+};
 use crate::egl::types::{EGLenum, EGLint};
 
 use std::os::raw::c_void;
@@ -24,6 +26,18 @@ pub const EGL_PLATFORM_X11_KHR: EGLenum = 0x31d5;
 pub const EGL_PLATFORM_WAYLAND_KHR: EGLenum = 0x31d8;
 pub const EGL_PLATFORM_SURFACELESS_MESA: EGLenum = 0x31dd;
 pub const EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE: EGLenum = 0x3200;
+pub const EGL_PLATFORM_ANGLE_ANGLE: EGLenum = 0x3202;
+pub const EGL_PLATFORM_ANGLE_TYPE_ANGLE: EGLenum = 0x3203;
+pub const EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE: EGLenum = 0x3489;
+pub const EGL_IOSURFACE_ANGLE: EGLenum = 0x3454;
+pub const EGL_IOSURFACE_PLANE_ANGLE: EGLenum = 0x345a;
+pub const EGL_TEXTURE_TYPE_ANGLE: EGLenum = 0x345c;
+pub const EGL_TEXTURE_INTERNAL_FORMAT_ANGLE: EGLenum = 0x345d;
+pub const EGL_SYNC_METAL_SHARED_EVENT_ANGLE: EGLenum = 0x34d8;
+pub const EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE: EGLenum = 0x34d9;
+pub const EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE: EGLenum = 0x34da;
+pub const EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE: EGLenum = 0x34db;
+pub const EGL_SYNC_METAL_SHARED_EVENT_SIGNALED_ANGLE: EGLenum = 0x34dc;
 pub const EGL_BAD_DEVICE_EXT: EGLenum = 0x322b;
 pub const EGL_DEVICE_EXT: EGLenum = 0x322c;
 pub const EGL_D3D11_DEVICE_ANGLE: EGLenum = 0x33a1;
@@ -50,6 +64,8 @@ pub(crate) struct EGLExtensionFunctions {
     pub(crate) ImageTargetTexture2DOES: extern "C" fn(target: EGLenum, image: EGLImageKHR),
 
     // Optional extensions
+    pub(crate) CopyMetalSharedEventANGLE:
+        Option<extern "C" fn(dpy: EGLDisplay, sync: EGLSync) -> *mut c_void>,
     pub(crate) CreateDeviceANGLE: Option<
         extern "C" fn(
             device_type: EGLint,
@@ -84,6 +100,7 @@ pub(crate) static EGL_EXTENSION_FUNCTIONS: LazyLock<EGLExtensionFunctions> = Laz
             DestroyImageKHR: cast(get(c"eglDestroyImageKHR")),
             ImageTargetTexture2DOES: cast(get(c"glEGLImageTargetTexture2DOES")),
 
+            CopyMetalSharedEventANGLE: cast(get(c"eglCopyMetalSharedEventANGLE")),
             CreateDeviceANGLE: cast(get(c"eglCreateDeviceANGLE")),
             GetNativeClientBufferANDROID: cast(get(c"eglGetNativeClientBufferANDROID")),
             QueryDeviceAttribEXT: cast(get(c"eglQueryDeviceAttribEXT")),
