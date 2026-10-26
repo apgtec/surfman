@@ -351,8 +351,8 @@ impl EglContextDescriptor {
             return Err(Error::UnsupportedGLProfile);
         }
 
-        // Android/OHOS does not support OpenGL compatibility profile at all
-        if cfg!(any(android_platform, ohos_platform)) && compatibility_profile {
+        // Android/OHOS and ANGLE on Metal do not support OpenGL compatibility profile at all
+        if cfg!(any(android_platform, ohos_platform, angle_metal)) && compatibility_profile {
             return Err(Error::UnsupportedGLProfile);
         }
 

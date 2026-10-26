@@ -7,7 +7,7 @@ use crate::cgl::context::CglContextDescriptor;
 use crate::macros::enum_conversion;
 #[cfg(all(windows_platform, not(feature = "sm-no-wgl")))]
 use crate::wgl::context::WglContextDescriptor;
-#[cfg(any(android_platform, angle, free_unix, ohos_platform))]
+#[cfg(any(android_platform, angle, angle_metal, free_unix, ohos_platform))]
 use crate::EglContextDescriptor;
 
 /// Information needed to create a context. Some APIs call this a "config" or a "pixel format".
@@ -19,7 +19,7 @@ pub enum ContextDescriptor {
     #[cfg(macos_platform)]
     Cgl(CglContextDescriptor),
     /// A [`ContextDescriptor`] for EGL platforms.
-    #[cfg(any(android_platform, angle, free_unix, ohos_platform))]
+    #[cfg(any(android_platform, angle, angle_metal, free_unix, ohos_platform))]
     Egl(EglContextDescriptor),
     /// A [`ContextDescriptor`] for WGL platforms.
     #[cfg(all(windows_platform, not(feature = "sm-no-wgl")))]
@@ -34,7 +34,7 @@ enum_conversion!(
     cgl,
     IncompatibleContextDescriptor
 );
-#[cfg(any(android_platform, angle, free_unix, ohos_platform))]
+#[cfg(any(android_platform, angle, angle_metal, free_unix, ohos_platform))]
 enum_conversion!(
     ContextDescriptor,
     Egl,

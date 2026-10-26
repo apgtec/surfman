@@ -324,7 +324,7 @@ impl Device {
         surface.lock_data()
     }
 
-    fn create_io_surface(
+    pub(crate) fn create_io_surface(
         &self,
         size: &Size2D<i32>,
         access: SurfaceAccess,

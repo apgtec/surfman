@@ -29,6 +29,7 @@ fn main() {
         angle: { all(windows, feature = "sm-angle") },
         angle_builtin: { all(windows_platform, feature = "sm-angle-builtin") },
         angle_default: { all(windows_platform, feature = "sm-angle-default") },
+        angle_metal: { all(macos_platform, feature = "sm-angle-metal") },
         no_wgl: { all(windows_platform, feature = "sm-no-wgl") },
         wayland_default: { all(wayland_platform, any(not(x11_platform), feature = "sm-wayland-default")) },
     }
