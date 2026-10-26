@@ -11,5 +11,7 @@ use self::connection::AngleMetalConnection as Connection;
 #[cfg(test)]
 use self::device::AngleMetalDevice as ConcreteDevice;
 #[cfg(test)]
+mod event_tests;
+#[cfg(test)]
 #[path = "../tests.rs"]
 mod tests;
