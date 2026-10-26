@@ -3,9 +3,12 @@
 use super::connection::{AngleMetalConnection, NativeConnectionWrapper};
 use super::surface::SurfaceDataGuard;
 use crate::angle_metal::context::{AngleMetalContext, NativeContext};
-use crate::angle_metal::surface::{AngleMetalSurface, AngleMetalSurfaceTexture};
+use crate::angle_metal::surface::{AngleMetalSurface, AngleMetalSurfaceTexture, IOSurfaceTexture};
 use crate::base::egl::context::{self, CurrentContextGuard, EGLBackedContext};
-use crate::base::egl::surface::EGLBackedSurface;
+use crate::base::egl::device::EGL_FUNCTIONS;
+use crate::base::egl::surface::{
+    bind_pbuffer_to_gl_texture, create_io_surface_pbuffer, EGLBackedSurface,
+};
 use crate::base::io_surface::adapter::AppleAdapter;
 use crate::context::ContextID;
 use crate::egl::types::EGLint;
@@ -14,7 +17,9 @@ use crate::{gl, ContextDescriptor};
 use crate::{ContextAttributes, Gl, SurfaceInfo};
 use crate::{Error, GLApi, SurfaceAccess, SurfaceType};
 use euclid::default::Size2D;
-use glow::Texture;
+use glow::{HasContext, Texture};
+use objc2_core_foundation::CFRetained;
+use objc2_io_surface::IOSurfaceRef;
 use std::os::raw::c_void;
 use std::sync::Arc;
 
@@ -502,5 +507,51 @@ impl AngleMetalDevice {
     #[inline]
     pub fn surface_texture_object(&self, surface_texture: &SurfaceTexture) -> Option<Texture> {
         surface_texture.angle_metal().ok()?.0.texture_object
+    }
+
+    /// Returns the IOSurface holding the pixels of a generic surface.
+    pub fn surface_io_surface(&self, surface: &Surface) -> Option<CFRetained<IOSurfaceRef>> {
+        surface.angle_metal().ok()?.0.io_surface()
+    }
+
+    /// Binds a BGRA or RGBA IOSurface, which may have been made with another API, to a new
+    /// `GL_TEXTURE_2D` texture of `context`, which renders into the IOSurface and reads from it.
+    pub fn create_io_surface_texture(
+        &self,
+        context: &Context,
+        io_surface: CFRetained<IOSurfaceRef>,
+    ) -> Result<IOSurfaceTexture, Error> {
+        let _guard = self.temporarily_make_context_current(context)?;
+        let egl_display = self.native_connection.egl_display;
+        let context_descriptor = self.context_descriptor(context);
+        let context = context.angle_metal()?;
+        unsafe {
+            let egl_config = context_descriptor.egl()?.to_egl_config(egl_display);
+            let egl_pbuffer = create_io_surface_pbuffer(egl_display, egl_config, &io_surface)?;
+            match bind_pbuffer_to_gl_texture(&context.1, egl_display, egl_pbuffer) {
+                Ok(texture_object) => Ok(IOSurfaceTexture {
+                    io_surface,
+                    egl_display,
+                    egl_pbuffer,
+                    texture_object,
+                }),
+                Err(err) => {
+                    EGL_FUNCTIONS.with(|egl| egl.DestroySurface(egl_display, egl_pbuffer));
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    /// Destroys a texture made with `create_io_surface_texture()`, in the context it was made in.
+    pub fn destroy_io_surface_texture(
+        &self,
+        context: &Context,
+        io_surface_texture: IOSurfaceTexture,
+    ) -> Result<(), Error> {
+        let _guard = self.temporarily_make_context_current(context)?;
+        let context = context.angle_metal()?;
+        unsafe { context.1.delete_texture(io_surface_texture.texture_object) };
+        Ok(())
     }
 }
