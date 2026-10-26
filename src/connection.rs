@@ -9,6 +9,8 @@ use raw_window_handle::RawDisplayHandle;
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 use crate::angle::connection::AngleConnection;
+#[cfg(angle_metal)]
+use crate::angle_metal::connection::AngleMetalConnection;
 #[cfg(macos_platform)]
 use crate::cgl::connection::CglConnection;
 #[cfg(any(android_platform, ohos_platform))]
@@ -28,6 +30,9 @@ pub enum Connection {
     /// An ANGLE connection for Windows systems.
     #[cfg(all(windows_platform, feature = "sm-angle"))]
     Angle(AngleConnection),
+    /// An ANGLE on Metal connection for macOS systems.
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalConnection),
     /// A connection for Apple systems.
     #[cfg(macos_platform)]
     Cgl(CglConnection),
@@ -54,6 +59,14 @@ enum_conversion!(
     Angle,
     AngleConnection,
     angle,
+    IncompatibleConnection
+);
+#[cfg(angle_metal)]
+enum_conversion!(
+    Connection,
+    AngleMetal,
+    AngleMetalConnection,
+    angle_metal,
     IncompatibleConnection
 );
 #[cfg(macos_platform)]
@@ -93,6 +106,7 @@ impl Connection {
     ///
     /// - Linux and BSD: Wayland, X11 (if `sm-x11` is enabled), surfaceless Mesa.
     /// - Windows: ANGLE (if `sm-angle` is enabled), WGL (if `sm-wgl` is enabled)
+    /// - macOS: CGL, ANGLE on Metal (if `sm-angle-metal` is enabled)
     pub fn new() -> Result<Connection, Error> {
         #[cfg(windows_platform)]
         {
@@ -104,7 +118,12 @@ impl Connection {
             connection
         }
         #[cfg(macos_platform)]
-        return CglConnection::new().map(Into::into);
+        {
+            let connection = CglConnection::new().map(Into::into);
+            #[cfg(angle_metal)]
+            let connection = connection.or_else(|_| AngleMetalConnection::new().map(Into::into));
+            return connection;
+        }
         #[cfg(any(android_platform, ohos_platform))]
         return HardwareBufferConnection::new().map(Into::into);
         #[cfg(free_unix)]
@@ -132,7 +151,13 @@ impl Connection {
             return connection;
         }
         #[cfg(macos_platform)]
-        return CglConnection::from_display_handle(handle).map(Into::into);
+        {
+            let connection = CglConnection::from_display_handle(handle).map(Into::into);
+            #[cfg(angle_metal)]
+            let connection = connection
+                .or_else(|_| AngleMetalConnection::from_display_handle(handle).map(Into::into));
+            return connection;
+        }
         #[cfg(any(android_platform, ohos_platform))]
         return HardwareBufferConnection::from_display_handle(handle).map(Into::into);
         #[cfg(x11_platform)]

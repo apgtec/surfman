@@ -17,6 +17,8 @@ extern crate log;
 pub mod adapter;
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 pub mod angle;
+#[cfg(angle_metal)]
+pub mod angle_metal;
 pub(crate) mod base;
 pub mod buffer_handle;
 #[cfg(macos_platform)]
@@ -77,7 +79,7 @@ pub use base::io_surface::device::Device as SystemDevice;
 #[cfg(target_os = "macos")]
 pub use base::io_surface::surface::Surface as SystemSurface;
 
-#[cfg(any(android_platform, angle, free_unix, ohos_platform))]
+#[cfg(any(android_platform, angle, angle_metal, free_unix, ohos_platform))]
 pub use crate::base::egl::context::EglContextDescriptor;
 
 #[cfg(any(

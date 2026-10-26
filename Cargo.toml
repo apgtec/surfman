@@ -21,6 +21,7 @@ cfg_aliases = "0.2.1"
 default = ["sm-wgl"]
 sm-angle = []
 sm-angle-builtin = ["sm-angle", "mozangle"]
+sm-angle-metal = []
 sm-test = []
 sm-wgl = []
 sm-x11 = ["x11-dl"]

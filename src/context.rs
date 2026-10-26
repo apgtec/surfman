@@ -13,6 +13,8 @@ use std::sync::Mutex;
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 use crate::angle::context::AngleContext;
+#[cfg(angle_metal)]
+use crate::angle_metal::context::AngleMetalContext;
 #[cfg(macos_platform)]
 use crate::cgl::context::CglContext;
 #[cfg(any(android_platform, ohos_platform))]
@@ -128,6 +130,9 @@ pub enum Context {
     /// An ANGLE context for Windows systems.
     #[cfg(all(windows_platform, feature = "sm-angle"))]
     Angle(AngleContext),
+    /// An ANGLE on Metal context for macOS systems.
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalContext),
     /// A context for Apple systems.
     #[cfg(macos_platform)]
     Cgl(CglContext),
@@ -150,6 +155,14 @@ pub enum Context {
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 enum_conversion!(Context, Angle, AngleContext, angle, IncompatibleContext);
+#[cfg(angle_metal)]
+enum_conversion!(
+    Context,
+    AngleMetal,
+    AngleMetalContext,
+    angle_metal,
+    IncompatibleContext
+);
 #[cfg(macos_platform)]
 enum_conversion!(Context, Cgl, CglContext, cgl, IncompatibleContext);
 #[cfg(any(android_platform, ohos_platform))]

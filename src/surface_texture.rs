@@ -4,6 +4,8 @@ use crate::macros::enum_conversion;
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 use crate::angle::surface::AngleSurfaceTexture;
+#[cfg(angle_metal)]
+use crate::angle_metal::surface::AngleMetalSurfaceTexture;
 #[cfg(macos_platform)]
 use crate::cgl::surface::CglSurfaceTexture;
 #[cfg(any(android_platform, ohos_platform))]
@@ -31,6 +33,9 @@ pub enum SurfaceTexture {
     /// An ANGLE surface texture for Windows systems.
     #[cfg(all(windows_platform, feature = "sm-angle"))]
     Angle(AngleSurfaceTexture),
+    /// An ANGLE on Metal surface texture for macOS systems.
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalSurfaceTexture),
     /// A surface texture for Apple systems.
     #[cfg(macos_platform)]
     Cgl(CglSurfaceTexture),
@@ -57,6 +62,14 @@ enum_conversion!(
     Angle,
     AngleSurfaceTexture,
     angle,
+    IncompatibleSurfaceTexture
+);
+#[cfg(angle_metal)]
+enum_conversion!(
+    SurfaceTexture,
+    AngleMetal,
+    AngleMetalSurfaceTexture,
+    angle_metal,
     IncompatibleSurfaceTexture
 );
 #[cfg(macos_platform)]

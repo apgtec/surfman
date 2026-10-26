@@ -302,6 +302,8 @@ impl EGLBackedContext {
                 Ok(())
             }
             Framebuffer::Surface(EGLBackedSurface::Buffer(_)) => Err(Error::NoWidgetAttached),
+            #[cfg(angle_metal)]
+            Framebuffer::Surface(EGLBackedSurface::IoSurface(_)) => Err(Error::NoWidgetAttached),
             Framebuffer::None | Framebuffer::External(_) => Ok(()),
         }
     }
@@ -370,8 +372,8 @@ impl EglContextDescriptor {
             return Err(Error::UnsupportedGLProfile);
         }
 
-        // Android/OHOS does not support OpenGL compatibility profile at all
-        if cfg!(any(android_platform, ohos_platform)) && compatibility_profile {
+        // Android/OHOS and ANGLE on Metal do not support OpenGL compatibility profile at all
+        if cfg!(any(android_platform, ohos_platform, angle_metal)) && compatibility_profile {
             return Err(Error::UnsupportedGLProfile);
         }
 

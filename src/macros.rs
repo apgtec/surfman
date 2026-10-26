@@ -82,6 +82,8 @@ macro_rules! dispatch {
         match $value {
             #[cfg(all(windows_platform, feature = "sm-angle"))]
             $enum::Angle($inner) => $body,
+            #[cfg(angle_metal)]
+            $enum::AngleMetal($inner) => $body,
             #[cfg(macos_platform)]
             $enum::Cgl($inner) => $body,
             #[cfg(any(android_platform, ohos_platform))]

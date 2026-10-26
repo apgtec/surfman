@@ -13,6 +13,8 @@ use std::os::raw::c_void;
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 use crate::angle::device::AngleDevice;
+#[cfg(angle_metal)]
+use crate::angle_metal::device::AngleMetalDevice;
 #[cfg(macos_platform)]
 use crate::cgl::device::CglDevice;
 #[cfg(any(android_platform, ohos_platform))]
@@ -33,6 +35,9 @@ pub enum Device {
     /// An ANGLE device for Windows systems.
     #[cfg(all(windows_platform, feature = "sm-angle"))]
     Angle(AngleDevice),
+    /// An ANGLE on Metal device for macOS systems.
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalDevice),
     /// A device for Apple systems.
     #[cfg(macos_platform)]
     Cgl(CglDevice),
@@ -55,6 +60,14 @@ pub enum Device {
 
 #[cfg(all(windows_platform, feature = "sm-angle"))]
 enum_conversion!(Device, Angle, AngleDevice, angle, IncompatibleDevice);
+#[cfg(angle_metal)]
+enum_conversion!(
+    Device,
+    AngleMetal,
+    AngleMetalDevice,
+    angle_metal,
+    IncompatibleDevice
+);
 #[cfg(macos_platform)]
 enum_conversion!(Device, Cgl, CglDevice, cgl, IncompatibleDevice);
 #[cfg(any(android_platform, ohos_platform))]

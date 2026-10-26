@@ -1,7 +1,9 @@
 //! Surfaces shared by the macOS backends.
 
+#[cfg(angle_metal)]
+use crate::angle_metal::surface::AngleMetalBufferBinding;
 use crate::cgl::surface::CglSurface;
-use crate::{SurfaceID, SurfaceInfo};
+use crate::{ContextID, SurfaceID, SurfaceInfo};
 
 use euclid::default::Size2D;
 use objc2_core_foundation::CFRetained;
@@ -19,6 +21,8 @@ pub struct IoSurfaceSurface {
 /// The objects that bind an [`IoSurfaceSurface`] to the context of the backend that created it.
 pub(crate) enum IoSurfaceBinding {
     Cgl(CglSurface),
+    #[cfg(angle_metal)]
+    AngleMetal(AngleMetalBufferBinding),
 }
 
 unsafe impl Send for IoSurfaceSurface {}
@@ -39,17 +43,27 @@ impl IoSurfaceSurface {
         self.io_surface.clone()
     }
 
+    pub(crate) fn context_id(&self) -> ContextID {
+        match self.binding {
+            IoSurfaceBinding::Cgl(ref surface) => surface.context_id,
+            #[cfg(angle_metal)]
+            IoSurfaceBinding::AngleMetal(ref binding) => binding.context_id,
+        }
+    }
+
     pub(crate) fn id(&self) -> SurfaceID {
         SurfaceID(&*self.io_surface as *const IOSurfaceRef as usize)
     }
 
     pub(crate) fn info(&self) -> SurfaceInfo {
-        match self.binding {
-            IoSurfaceBinding::Cgl(ref surface) => SurfaceInfo {
-                size: self.size(),
-                id: self.id(),
-                context_id: surface.context_id,
-                framebuffer_object: surface.framebuffer_object,
+        SurfaceInfo {
+            size: self.size(),
+            id: self.id(),
+            context_id: self.context_id(),
+            framebuffer_object: match self.binding {
+                IoSurfaceBinding::Cgl(ref surface) => surface.framebuffer_object,
+                #[cfg(angle_metal)]
+                IoSurfaceBinding::AngleMetal(ref binding) => binding.framebuffer_object,
             },
         }
     }

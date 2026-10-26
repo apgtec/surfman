@@ -28,6 +28,7 @@ fn main() {
         // we add aliases that include checks for the correct platform.
         angle: { all(windows_platform, feature = "sm-angle") },
         angle_builtin: { all(windows_platform, feature = "sm-angle-builtin") },
+        angle_metal: { all(macos_platform, feature = "sm-angle-metal") },
         wgl: { all(windows_platform, feature = "sm-wgl") },
     }
 

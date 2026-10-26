@@ -23,6 +23,9 @@ use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
+#[cfg(angle_metal)]
+use crate::macos::surface::IoSurfaceSurface;
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct ExternalEGLSurfaces {
@@ -51,6 +54,9 @@ pub struct EGLWindowSurface {
 pub(crate) enum EGLBackedSurface {
     Window(EGLWindowSurface),
     Buffer(EGLBufferSurface),
+    /// An `IOSurface`, which ANGLE on Metal renders to through a pbuffer.
+    #[cfg(angle_metal)]
+    IoSurface(IoSurfaceSurface),
 }
 
 impl Debug for EGLBufferSurface {
@@ -317,6 +323,8 @@ impl EGLBackedSurface {
         match self {
             EGLBackedSurface::Window(surface) => surface.context_id,
             EGLBackedSurface::Buffer(surface) => surface.context_id,
+            #[cfg(angle_metal)]
+            EGLBackedSurface::IoSurface(surface) => surface.context_id(),
         }
     }
 
@@ -328,6 +336,8 @@ impl EGLBackedSurface {
         match self {
             EGLBackedSurface::Window(surface) => surface.present(egl_display, egl_context),
             EGLBackedSurface::Buffer(_) => Err(Error::NoWidgetAttached),
+            #[cfg(angle_metal)]
+            EGLBackedSurface::IoSurface(_) => Err(Error::NoWidgetAttached),
         }
     }
 
@@ -335,6 +345,8 @@ impl EGLBackedSurface {
         match self {
             EGLBackedSurface::Window(surface) => surface.info(),
             EGLBackedSurface::Buffer(surface) => surface.info(),
+            #[cfg(angle_metal)]
+            EGLBackedSurface::IoSurface(surface) => surface.info(),
         }
     }
 
@@ -348,12 +360,8 @@ impl EGLBackedSurface {
 
                 egl.MakeCurrent(egl_display, egl::NO_SURFACE, egl::NO_SURFACE, egl_context);
 
-                if let EGLBackedSurface::Buffer(EGLBufferSurface {
-                    framebuffer_object: Some(framebuffer_object),
-                    ..
-                }) = self
-                {
-                    gl_utils::unbind_framebuffer_if_necessary(gl, *framebuffer_object);
+                if let Some(framebuffer_object) = self.info().framebuffer_object {
+                    gl_utils::unbind_framebuffer_if_necessary(gl, framebuffer_object);
                 }
             })
         }
@@ -366,6 +374,8 @@ impl EGLBackedSurface {
                 read: surface.egl_surface,
             },
             EGLBackedSurface::Buffer(_) => ExternalEGLSurfaces::default(),
+            #[cfg(angle_metal)]
+            EGLBackedSurface::IoSurface(_) => ExternalEGLSurfaces::default(),
         }
     }
 }
