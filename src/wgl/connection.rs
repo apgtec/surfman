@@ -1,16 +1,25 @@
 //! A connection to the window server.
 //!
-//! Window server connections are implicit in the Win32 API, so this is a zero-sized type.
+//! Window server connections are implicit in the Win32 API.
 
 use super::adapter::WglAdapter;
 use super::device::{NativeDevice, WglDevice};
 use crate::{Adapter, AdapterPreferences, Error, GLApi};
 
+use std::sync::{Arc, Mutex};
+
 /// Represents a connection to the display server.
 ///
-/// Window server connections are implicit in the Win32 API, so this is a zero-sized type.
+/// Window server connections are implicit in the Win32 API. Without `WGL_NV_DX_interop`, a
+/// connection and its clones also make a share group: generic surfaces are then plain OpenGL
+/// textures, which other contexts read directly, so every context made on a device of this
+/// connection shares objects with the first context such a device made or adopted, unless it is
+/// given another context to share with.
 #[derive(Clone)]
-pub struct WglConnection;
+pub struct WglConnection {
+    // The first context's `HGLRC`, or 0 before there is one.
+    pub(crate) gl_share_root: Arc<Mutex<usize>>,
+}
 
 /// An empty placeholder for native connections.
 ///
@@ -22,7 +31,9 @@ impl WglConnection {
     /// Connects to the default display.
     #[inline]
     pub fn new() -> Result<WglConnection, Error> {
-        Ok(WglConnection)
+        Ok(WglConnection {
+            gl_share_root: Arc::default(),
+        })
     }
 
     /// An alias for `Connection::new()`, present for consistency with other backends.
@@ -52,7 +63,7 @@ impl WglConnection {
     /// Opens a device.
     #[inline]
     pub fn create_device(&self, adapter: &Adapter) -> Result<WglDevice, Error> {
-        WglDevice::new(adapter.wgl()?)
+        WglDevice::new(self, adapter.wgl()?)
     }
 
     /// Creates a `Device` from a Direct3D 11 device and associated GL/DX interop handle.
@@ -67,7 +78,7 @@ impl WglConnection {
         &self,
         native_device: NativeDevice,
     ) -> Result<WglDevice, Error> {
-        WglDevice::from_native_device(native_device)
+        WglDevice::from_native_device(self, native_device)
     }
 
     /// Opens the display connection corresponding to the given `DisplayHandle`.

@@ -34,6 +34,15 @@ pub(crate) enum Win32Objects {
         gl_framebuffer: Option<glow::Framebuffer>,
         renderbuffers: Renderbuffers,
     },
+    // Without WGL_NV_DX_interop: a plain texture, which the contexts reading it share.
+    GLTexture {
+        gl_texture: Option<glow::Texture>,
+        gl_framebuffer: Option<glow::Framebuffer>,
+        renderbuffers: Renderbuffers,
+        // Signalled when the context that last rendered to or read the texture is done with it,
+        // for the next one to wait on.
+        gl_sync: Option<glow::Fence>,
+    },
     Widget {
         window_handle: HWND,
     },
@@ -43,7 +52,7 @@ pub(crate) enum Win32Objects {
 pub struct WglSurfaceTexture {
     pub(crate) surface: WglSurface,
     #[allow(dead_code)]
-    pub(crate) local_d3d11_texture: ComPtr<ID3D11Texture2D>,
+    pub(crate) local_d3d11_texture: Option<ComPtr<ID3D11Texture2D>>,
     pub(crate) local_gl_dx_interop_object: HANDLE,
     pub(crate) gl_texture: Option<glow::Texture>,
     pub(crate) phantom: PhantomData<*const ()>,
@@ -77,6 +86,9 @@ impl WglSurface {
             Win32Objects::Texture {
                 ref d3d11_texture, ..
             } => SurfaceID((*d3d11_texture).as_raw() as usize),
+            Win32Objects::GLTexture { gl_texture, .. } => {
+                SurfaceID(gl_texture.map_or(0, |texture| texture.0.get() as usize))
+            }
             Win32Objects::Widget { window_handle } => SurfaceID(window_handle as usize),
         }
     }
@@ -117,7 +129,8 @@ impl WglSurface {
             id: self.id(),
             context_id: self.context_id,
             framebuffer_object: match self.win32_objects {
-                Win32Objects::Texture { gl_framebuffer, .. } => gl_framebuffer,
+                Win32Objects::Texture { gl_framebuffer, .. }
+                | Win32Objects::GLTexture { gl_framebuffer, .. } => gl_framebuffer,
                 Win32Objects::Widget { .. } => None,
             },
         }
