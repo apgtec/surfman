@@ -6,20 +6,30 @@ use crate::angle_metal::context::{Context, ContextDescriptor, NativeContext};
 use crate::angle_metal::surface::{IOSurfaceTexture, NativeWidget, Surface, SurfaceTexture};
 use crate::base::egl::context::{self, CurrentContextGuard, EGLBackedContext};
 use crate::base::egl::device::EGL_FUNCTIONS;
+use crate::base::egl::ffi::{
+    EGL_EXTENSION_FUNCTIONS, EGL_SYNC_METAL_SHARED_EVENT_ANGLE,
+    EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE, EGL_SYNC_METAL_SHARED_EVENT_SIGNALED_ANGLE,
+    EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE,
+    EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE,
+};
 use crate::base::egl::surface::{
     bind_pbuffer_to_gl_texture, create_io_surface_pbuffer, EGLBackedSurface,
 };
 use crate::context::ContextID;
 use crate::egl;
-use crate::egl::types::EGLint;
+use crate::egl::types::{EGLAttrib, EGLint};
 use crate::gl;
 use crate::{ContextAttributes, Gl, SurfaceInfo};
 use crate::{Error, GLApi, SurfaceAccess, SurfaceType};
 use euclid::default::Size2D;
 use glow::{HasContext, Texture};
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
 use objc2_core_foundation::CFRetained;
 use objc2_io_surface::IOSurfaceRef;
+use objc2_metal::MTLSharedEvent;
 use std::os::raw::c_void;
+use std::ptr;
 use std::sync::Arc;
 
 const SURFACE_GL_TEXTURE_TARGET: u32 = gl::TEXTURE_2D;
@@ -533,5 +543,88 @@ impl Device {
         let _guard = self.temporarily_make_context_current(context)?;
         unsafe { context.1.delete_texture(io_surface_texture.texture_object) };
         Ok(())
+    }
+
+    /// Has the GPU signal `event`, or a new event without one, with `value` once it has finished
+    /// what `context` has been given so far, and submits that. Returns the event, which Metal
+    /// command buffers can then wait on instead of the CPU waiting for the context.
+    pub fn signal_metal_shared_event(
+        &self,
+        context: &Context,
+        event: Option<&ProtocolObject<dyn MTLSharedEvent>>,
+        value: u64,
+    ) -> Result<Retained<ProtocolObject<dyn MTLSharedEvent>>, Error> {
+        let copy_event = EGL_EXTENSION_FUNCTIONS
+            .CopyMetalSharedEventANGLE
+            .ok_or(Error::RequiredExtensionUnavailable)?;
+        let _guard = self.temporarily_make_context_current(context)?;
+        let egl_display = self.native_connection.egl_display;
+        let attributes = [
+            EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE as EGLAttrib,
+            event.map_or(ptr::null(), |event| event as *const _ as *const c_void) as EGLAttrib,
+            EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE as EGLAttrib,
+            (value & 0xffff_ffff) as EGLAttrib,
+            EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE as EGLAttrib,
+            (value >> 32) as EGLAttrib,
+            egl::NONE as EGLAttrib,
+        ];
+        unsafe {
+            let event = EGL_FUNCTIONS.with(|egl| {
+                let sync = egl.CreateSync(
+                    egl_display,
+                    EGL_SYNC_METAL_SHARED_EVENT_ANGLE,
+                    attributes.as_ptr(),
+                );
+                if sync == egl::NO_SYNC {
+                    return Err(Error::Failed);
+                }
+                // The signal is queued with the context's work, which outlives the sync.
+                let event = copy_event(egl_display, sync);
+                egl.DestroySync(egl_display, sync);
+                Ok(event)
+            })?;
+            context.1.flush();
+            Retained::from_raw(event.cast()).ok_or(Error::Failed)
+        }
+    }
+
+    /// Has the GPU wait for `event` to reach `value` before it runs what `context` is given from
+    /// now on, such as until another API's command buffers are done with what it draws into.
+    pub fn wait_for_metal_shared_event(
+        &self,
+        context: &Context,
+        event: &ProtocolObject<dyn MTLSharedEvent>,
+        value: u64,
+    ) -> Result<(), Error> {
+        let _guard = self.temporarily_make_context_current(context)?;
+        let egl_display = self.native_connection.egl_display;
+        let attributes = [
+            EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE as EGLAttrib,
+            event as *const _ as *const c_void as EGLAttrib,
+            EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE as EGLAttrib,
+            (value & 0xffff_ffff) as EGLAttrib,
+            EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE as EGLAttrib,
+            (value >> 32) as EGLAttrib,
+            egl::SYNC_CONDITION as EGLAttrib,
+            EGL_SYNC_METAL_SHARED_EVENT_SIGNALED_ANGLE as EGLAttrib,
+            egl::NONE as EGLAttrib,
+        ];
+        EGL_FUNCTIONS.with(|egl| unsafe {
+            let sync = egl.CreateSync(
+                egl_display,
+                EGL_SYNC_METAL_SHARED_EVENT_ANGLE,
+                attributes.as_ptr(),
+            );
+            if sync == egl::NO_SYNC {
+                return Err(Error::Failed);
+            }
+            let waited = egl.WaitSync(egl_display, sync, 0);
+            egl.DestroySync(egl_display, sync);
+            if waited == egl::TRUE as _ {
+                Ok(())
+            } else {
+                Err(Error::Failed)
+            }
+        })
     }
 }
