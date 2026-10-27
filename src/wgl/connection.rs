@@ -66,6 +66,16 @@ impl WglConnection {
         WglDevice::new(self, adapter.wgl()?).map(Device::from)
     }
 
+    /// Opens a device whose buffer surfaces are OpenGL textures that the other contexts of the
+    /// connection's share group read directly, as when `WGL_NV_DX_interop` is missing.
+    ///
+    /// This is for sharing surfaces with an OpenGL context that the embedder owns, through
+    /// `create_context_from_native_context()`. These surfaces have no buffer handle.
+    #[inline]
+    pub fn create_device_without_dx_interop(&self, adapter: &Adapter) -> Result<WglDevice, Error> {
+        Ok(WglDevice::new_without_dx_interop(self, adapter.wgl()?))
+    }
+
     /// Creates a `Device` from a Direct3D 11 device and associated GL/DX interop handle.
     ///
     /// The handle can be created by calling `wglDXOpenDeviceNV` from the `WGL_NV_DX_interop`

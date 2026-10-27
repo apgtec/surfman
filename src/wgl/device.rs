@@ -123,8 +123,10 @@ pub struct NativeDevice {
 impl Drop for WglDevice {
     fn drop(&mut self) {
         if let Some(ref dx_interop_functions) = WGL_EXTENSION_FUNCTIONS.dx_interop_functions {
-            unsafe {
-                (dx_interop_functions.DXCloseDeviceNV)(self.gl_dx_interop_device);
+            if !self.gl_dx_interop_device.is_null() {
+                unsafe {
+                    (dx_interop_functions.DXCloseDeviceNV)(self.gl_dx_interop_device);
+                }
             }
         }
     }
@@ -135,21 +137,11 @@ impl WglDevice {
         connection: &WglConnection,
         adapter: &WglAdapter,
     ) -> Result<WglDevice, Error> {
-        adapter.set_exported_variables();
-
         let dx_interop_functions = match WGL_EXTENSION_FUNCTIONS.dx_interop_functions {
             Some(ref dx_interop_functions) => dx_interop_functions,
-            None => {
-                return Ok(WglDevice {
-                    adapter: adapter.clone(),
-                    d3d11_device: None,
-                    d3d11_device_context: None,
-                    gl_dx_interop_device: ptr::null_mut(),
-                    hidden_window: HiddenWindow::new(),
-                    gl_share_root: connection.gl_share_root.clone(),
-                })
-            }
+            None => return Ok(WglDevice::new_without_dx_interop(connection, adapter)),
         };
+        adapter.set_exported_variables();
 
         unsafe {
             let mut d3d11_device = ptr::null_mut();
@@ -187,6 +179,22 @@ impl WglDevice {
                 hidden_window,
                 gl_share_root: connection.gl_share_root.clone(),
             })
+        }
+    }
+
+    // A device whose buffer surfaces are OpenGL textures in the connection's share group.
+    pub(crate) fn new_without_dx_interop(
+        connection: &WglConnection,
+        adapter: &WglAdapter,
+    ) -> WglDevice {
+        adapter.set_exported_variables();
+        WglDevice {
+            adapter: adapter.clone(),
+            d3d11_device: None,
+            d3d11_device_context: None,
+            gl_dx_interop_device: ptr::null_mut(),
+            hidden_window: HiddenWindow::new(),
+            gl_share_root: connection.gl_share_root.clone(),
         }
     }
 
@@ -363,9 +371,7 @@ impl WglDevice {
         let mut gl_share_root = self.gl_share_root.lock().unwrap();
         let share_glrc = match share_with {
             Some(share_with) => share_with.glrc,
-            None if WGL_EXTENSION_FUNCTIONS.dx_interop_functions.is_none() => {
-                *gl_share_root as HGLRC
-            }
+            None if self.d3d11_device.is_none() => *gl_share_root as HGLRC,
             None => ptr::null_mut(),
         };
         unsafe {
@@ -399,7 +405,7 @@ impl WglDevice {
                 if glrc.is_null() {
                     return Err(Error::ContextCreationFailed(WindowingApiError::Failed));
                 }
-                if *gl_share_root == 0 && WGL_EXTENSION_FUNCTIONS.dx_interop_functions.is_none() {
+                if *gl_share_root == 0 && self.d3d11_device.is_none() {
                     *gl_share_root = glrc as usize;
                 }
 
@@ -454,7 +460,7 @@ impl WglDevice {
         };
 
         let mut gl_share_root = self.gl_share_root.lock().unwrap();
-        if *gl_share_root == 0 && WGL_EXTENSION_FUNCTIONS.dx_interop_functions.is_none() {
+        if *gl_share_root == 0 && self.d3d11_device.is_none() {
             *gl_share_root = native_context.0 as usize;
         }
 
