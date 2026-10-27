@@ -1,5 +1,7 @@
 //! Functionality common to backends using EGL displays.
 
+use crate::egl;
+use crate::egl::types::{EGLDisplay, EGLint};
 use crate::egl::Egl;
 
 #[cfg(not(target_os = "windows"))]
@@ -116,4 +118,22 @@ pub(crate) fn lookup_gles_symbol(_: &CStr) -> *const c_void {
 
 pub(crate) unsafe fn lookup_egl_extension(name: &CStr) -> *mut c_void {
     EGL_FUNCTIONS.with(|egl| mem::transmute(egl.GetProcAddress(name.as_ptr())))
+}
+
+/// Returns whether `egl_display` supports the EGL extension `name`.
+///
+/// `eglGetProcAddress` can return functions of extensions that the display does not support, so
+/// those functions being present is not enough.
+pub(crate) fn display_supports_extension(egl_display: EGLDisplay, name: &str) -> bool {
+    EGL_FUNCTIONS.with(|egl| {
+        let extensions = unsafe { egl.QueryString(egl_display, egl::EXTENSIONS as EGLint) };
+        if extensions.is_null() {
+            return false;
+        }
+        let extensions = unsafe { CStr::from_ptr(extensions) };
+        extensions
+            .to_bytes()
+            .split(|&byte| byte == b' ')
+            .any(|extension| extension == name.as_bytes())
+    })
 }

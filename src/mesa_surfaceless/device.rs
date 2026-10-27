@@ -11,8 +11,8 @@ use crate::free_unix::surface::PbufferSurface;
 use crate::mesa_surfaceless::context::{NativeContext, SurfacelessMesaContext};
 use crate::mesa_surfaceless::surface::SurfacelessMesaSurfaceTexture;
 use crate::{
-    egl, Adapter, Context, EglContextDescriptor, OffscreenSurface, Surface, SurfaceTexture,
-    WindowSurface,
+    egl, Adapter, BufferHandle, Context, EglContextDescriptor, OffscreenSurface, Surface,
+    SurfaceTexture, WindowSurface,
 };
 use crate::{gl, ContextDescriptor};
 use crate::{ContextAttributes, Gl, SurfaceInfo};
@@ -488,6 +488,38 @@ impl SurfacelessMesaDevice {
     #[inline]
     pub fn surface_texture_object(&self, surface_texture: &SurfaceTexture) -> Option<Texture> {
         surface_texture.surfaceless_mesa().ok()?.0.texture_object
+    }
+
+    /// Returns a DMA-BUF handle to the memory of a buffer surface, which other devices, graphics
+    /// APIs or processes can import.
+    pub fn buffer_handle(&self, surface: &OffscreenSurface) -> Result<BufferHandle, Error> {
+        let surface = surface.pbuffer()?;
+        surface
+            .0
+            .dma_buf(self.native_connection.egl_display)
+            .map(BufferHandle::DmaBuf)
+    }
+
+    /// Creates a buffer surface of the given context that renders into the memory behind a
+    /// DMA-BUF handle.
+    pub fn import_buffer_handle(
+        &self,
+        context: &Context,
+        handle: &BufferHandle,
+    ) -> Result<OffscreenSurface, Error> {
+        let BufferHandle::DmaBuf(dma_buf) = handle;
+        let _guard = self.temporarily_make_context_current(context)?;
+        let context_descriptor = self.context_descriptor(context);
+        let context_attributes = self.context_descriptor_attributes(&context_descriptor);
+        let context = context.surfaceless_mesa()?;
+        let surface = EGLBufferSurface::from_dma_buf(
+            &context.1,
+            self.native_connection.egl_display,
+            context.0.id,
+            &context_attributes,
+            dma_buf,
+        )?;
+        Ok(PbufferSurface(surface).into())
     }
 }
 

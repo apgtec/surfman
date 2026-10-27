@@ -29,6 +29,14 @@ pub const EGL_DEVICE_EXT: EGLenum = 0x322c;
 pub const EGL_D3D11_DEVICE_ANGLE: EGLenum = 0x33a1;
 pub const EGL_DXGI_KEYED_MUTEX_ANGLE: EGLenum = 0x33a2;
 pub const EGL_D3D_TEXTURE_ANGLE: EGLenum = 0x33a3;
+pub const EGL_LINUX_DMA_BUF_EXT: EGLenum = 0x3270;
+pub const EGL_LINUX_DRM_FOURCC_EXT: EGLenum = 0x3271;
+pub const EGL_DMA_BUF_PLANE_FD_EXT: [EGLenum; 4] = [0x3272, 0x3275, 0x3278, 0x3440];
+pub const EGL_DMA_BUF_PLANE_OFFSET_EXT: [EGLenum; 4] = [0x3273, 0x3276, 0x3279, 0x3441];
+pub const EGL_DMA_BUF_PLANE_PITCH_EXT: [EGLenum; 4] = [0x3274, 0x3277, 0x327a, 0x3442];
+pub const EGL_DMA_BUF_PLANE_MODIFIER_LO_EXT: [EGLenum; 4] = [0x3443, 0x3445, 0x3447, 0x3449];
+pub const EGL_DMA_BUF_PLANE_MODIFIER_HI_EXT: [EGLenum; 4] = [0x3444, 0x3446, 0x3448, 0x344a];
+pub const DRM_FORMAT_MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
 
 pub const EGL_NO_DEVICE_EXT: EGLDeviceEXT = 0 as EGLDeviceEXT;
 pub const EGL_NO_IMAGE_KHR: EGLImageKHR = 0 as EGLImageKHR;
@@ -50,6 +58,24 @@ pub(crate) struct EGLExtensionFunctions {
     pub(crate) ImageTargetTexture2DOES: extern "C" fn(target: EGLenum, image: EGLImageKHR),
 
     // Optional extensions
+    pub(crate) ExportDMABUFImageMESA: Option<
+        extern "C" fn(
+            dpy: EGLDisplay,
+            image: EGLImageKHR,
+            fds: *mut i32,
+            strides: *mut EGLint,
+            offsets: *mut EGLint,
+        ) -> EGLBoolean,
+    >,
+    pub(crate) ExportDMABUFImageQueryMESA: Option<
+        extern "C" fn(
+            dpy: EGLDisplay,
+            image: EGLImageKHR,
+            fourcc: *mut i32,
+            num_planes: *mut i32,
+            modifiers: *mut u64,
+        ) -> EGLBoolean,
+    >,
     pub(crate) CreateDeviceANGLE: Option<
         extern "C" fn(
             device_type: EGLint,
@@ -84,6 +110,8 @@ pub(crate) static EGL_EXTENSION_FUNCTIONS: LazyLock<EGLExtensionFunctions> = Laz
             DestroyImageKHR: cast(get(c"eglDestroyImageKHR")),
             ImageTargetTexture2DOES: cast(get(c"glEGLImageTargetTexture2DOES")),
 
+            ExportDMABUFImageMESA: cast(get(c"eglExportDMABUFImageMESA")),
+            ExportDMABUFImageQueryMESA: cast(get(c"eglExportDMABUFImageQueryMESA")),
             CreateDeviceANGLE: cast(get(c"eglCreateDeviceANGLE")),
             GetNativeClientBufferANDROID: cast(get(c"eglGetNativeClientBufferANDROID")),
             QueryDeviceAttribEXT: cast(get(c"eglQueryDeviceAttribEXT")),

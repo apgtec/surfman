@@ -15,8 +15,8 @@ use crate::macos::surface::{IoSurfaceBinding, IoSurfaceSurface};
 use crate::renderbuffers::Renderbuffers;
 use crate::surface::Framebuffer;
 use crate::{
-    gl, gl_utils, Adapter, Context, GLVersion, OffscreenSurface, Surface, SurfaceAccess,
-    SurfaceInfo, SurfaceTexture, WindowSurface, WindowingApiError,
+    gl, gl_utils, Adapter, BufferHandle, Context, GLVersion, OffscreenSurface, Surface,
+    SurfaceAccess, SurfaceInfo, SurfaceTexture, WindowSurface, WindowingApiError,
 };
 use crate::{ContextAttributeFlags, ContextAttributes, ContextDescriptor, Error, GLApi, Gl};
 use cgl::{
@@ -539,7 +539,15 @@ impl CglDevice {
         mut system_surface: SystemSurface,
     ) -> Result<CglSurface, Error> {
         self.0.set_surface_flipped(&mut system_surface, true);
+        self.create_surface_from_system_surface(context, system_surface)
+    }
 
+    // Renders to an IOSurface through a texture bound to it.
+    fn create_surface_from_system_surface(
+        &self,
+        context: &Context,
+        mut system_surface: SystemSurface,
+    ) -> Result<CglSurface, Error> {
         let context_descriptor = self.context_descriptor(context);
         let context_attributes = self.context_descriptor_attributes(&context_descriptor);
 
@@ -864,6 +872,26 @@ impl CglDevice {
     #[inline]
     pub fn native_surface(&self, surface: &Surface) -> NativeSurface {
         self.0.native_surface(&cgl_surface(surface).system_surface)
+    }
+
+    /// Returns the `IOSurface` behind a buffer surface, which other devices, graphics APIs or
+    /// processes can use.
+    pub fn buffer_handle(&self, surface: &OffscreenSurface) -> Result<BufferHandle, Error> {
+        Ok(BufferHandle::IoSurface(
+            surface.io_surface()?.io_surface.clone(),
+        ))
+    }
+
+    /// Creates a buffer surface of the given context that renders into an `IOSurface`.
+    pub fn import_buffer_handle(
+        &self,
+        context: &Context,
+        handle: &BufferHandle,
+    ) -> Result<OffscreenSurface, Error> {
+        let BufferHandle::IoSurface(io_surface) = handle;
+        let system_surface = self.0.create_surface_from_io_surface(io_surface.clone());
+        self.create_surface_from_system_surface(context, system_surface)
+            .map(OffscreenSurface::from)
     }
 }
 
