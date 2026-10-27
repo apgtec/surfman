@@ -815,6 +815,37 @@ pub fn test_buffer_handle_import() {
     }
 }
 
+// Tests that a context can wait on the GPU for another context's native fence.
+#[cfg(free_unix)]
+#[cfg_attr(not(feature = "sm-test"), test)]
+pub fn test_native_fence() {
+    let mut env = match BasicEnvironment::new() {
+        None => return,
+        Some(env) => env,
+    };
+
+    clear(&env.gl, &[0, 255, 0, 255]);
+    let concrete_device: &mut ConcreteDevice = (&mut env.device)
+        .try_into()
+        .expect("Device should belong to this backend");
+    match concrete_device.export_native_fence(&env.context) {
+        Ok(fence) => {
+            let mut other_context = concrete_device
+                .create_context(&env.context_descriptor, None)
+                .unwrap();
+            concrete_device
+                .wait_for_native_fence(&other_context, fence)
+                .unwrap();
+            concrete_device.destroy_context(&mut other_context).unwrap();
+        }
+        Err(Error::RequiredExtensionUnavailable) => {}
+        Err(error) => panic!("Failed to export a native fence: {error:?}"),
+    }
+
+    env.device.make_context_current(&env.context).unwrap();
+    env.device.destroy_context(&mut env.context).unwrap();
+}
+
 #[cfg(not(any(target_os = "android", target_env = "ohos")))]
 #[cfg_attr(not(feature = "sm-test"), test)]
 pub fn test_depth_and_stencil() {

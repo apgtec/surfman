@@ -2,7 +2,9 @@
 
 #![allow(dead_code)]
 
-use crate::egl::types::{EGLAttrib, EGLBoolean, EGLContext, EGLDeviceEXT, EGLDisplay, EGLSurface};
+use crate::egl::types::{
+    EGLAttrib, EGLBoolean, EGLContext, EGLDeviceEXT, EGLDisplay, EGLSurface, EGLSync,
+};
 use crate::egl::types::{EGLenum, EGLint};
 
 use std::os::raw::c_void;
@@ -37,6 +39,9 @@ pub const EGL_DMA_BUF_PLANE_PITCH_EXT: [EGLenum; 4] = [0x3274, 0x3277, 0x327a, 0
 pub const EGL_DMA_BUF_PLANE_MODIFIER_LO_EXT: [EGLenum; 4] = [0x3443, 0x3445, 0x3447, 0x3449];
 pub const EGL_DMA_BUF_PLANE_MODIFIER_HI_EXT: [EGLenum; 4] = [0x3444, 0x3446, 0x3448, 0x344a];
 pub const DRM_FORMAT_MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
+pub const EGL_SYNC_NATIVE_FENCE_ANDROID: EGLenum = 0x3144;
+pub const EGL_SYNC_NATIVE_FENCE_FD_ANDROID: EGLenum = 0x3145;
+pub const EGL_NO_NATIVE_FENCE_FD_ANDROID: EGLint = -1;
 
 pub const EGL_NO_DEVICE_EXT: EGLDeviceEXT = 0 as EGLDeviceEXT;
 pub const EGL_NO_IMAGE_KHR: EGLImageKHR = 0 as EGLImageKHR;
@@ -76,6 +81,8 @@ pub(crate) struct EGLExtensionFunctions {
             modifiers: *mut u64,
         ) -> EGLBoolean,
     >,
+    pub(crate) DupNativeFenceFDANDROID:
+        Option<extern "C" fn(dpy: EGLDisplay, sync: EGLSync) -> EGLint>,
     pub(crate) CreateDeviceANGLE: Option<
         extern "C" fn(
             device_type: EGLint,
@@ -112,6 +119,7 @@ pub(crate) static EGL_EXTENSION_FUNCTIONS: LazyLock<EGLExtensionFunctions> = Laz
 
             ExportDMABUFImageMESA: cast(get(c"eglExportDMABUFImageMESA")),
             ExportDMABUFImageQueryMESA: cast(get(c"eglExportDMABUFImageQueryMESA")),
+            DupNativeFenceFDANDROID: cast(get(c"eglDupNativeFenceFDANDROID")),
             CreateDeviceANGLE: cast(get(c"eglCreateDeviceANGLE")),
             GetNativeClientBufferANDROID: cast(get(c"eglGetNativeClientBufferANDROID")),
             QueryDeviceAttribEXT: cast(get(c"eglQueryDeviceAttribEXT")),

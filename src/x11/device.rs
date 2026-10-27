@@ -4,6 +4,7 @@ use super::connection::{NativeConnectionWrapper, X11Connection};
 use super::context::NativeContext;
 use crate::base::egl::{
     context::{self, CurrentContextGuard, DefaultFramebuffer, EGLBackedContext},
+    native_fence,
     surface::{EGLBackedSurface, EGLBufferSurface, EGLWindowSurface},
 };
 use crate::context::ContextID;
@@ -20,6 +21,7 @@ use crate::{
 use euclid::default::Size2D;
 use glow::Texture;
 use raw_window_handle::{RawWindowHandle, WindowHandle};
+use std::os::fd::OwnedFd;
 use std::os::raw::c_void;
 use std::sync::Arc;
 use x11_dl::xlib::Window;
@@ -563,6 +565,21 @@ impl X11Device {
             dma_buf,
         )?;
         Ok(PbufferSurface(surface).into())
+    }
+
+    /// Returns a sync file descriptor that signals once the GPU has finished what `context` has
+    /// been given so far, for other devices and APIs that read its buffer surfaces to wait on.
+    pub fn export_native_fence(&self, context: &Context) -> Result<OwnedFd, Error> {
+        let _guard = self.temporarily_make_context_current(context)?;
+        let context = context.x11()?;
+        native_fence::export(&context.1, self.native_connection.egl_display)
+    }
+
+    /// Has the GPU wait for a sync file descriptor from another device or API before it runs
+    /// what `context` is given from now on.
+    pub fn wait_for_native_fence(&self, context: &Context, fence: OwnedFd) -> Result<(), Error> {
+        let _guard = self.temporarily_make_context_current(context)?;
+        native_fence::wait(self.native_connection.egl_display, fence)
     }
 }
 
