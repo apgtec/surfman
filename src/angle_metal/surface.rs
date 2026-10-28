@@ -77,6 +77,12 @@ pub(crate) unsafe fn create_io_surface_pbuffer(
     egl_config: EGLConfig,
     io_surface: &IOSurfaceRef,
 ) -> Result<EGLSurface, Error> {
+    // The IOSurfaces surfman creates are BGRA, those of other APIs can also be RGBA.
+    let internal_format = if io_surface.pixel_format() == u32::from_be_bytes(*b"RGBA") {
+        gl::RGBA
+    } else {
+        gl::BGRA
+    };
     let attributes = [
         egl::WIDTH as EGLint,
         io_surface.width() as EGLint,
@@ -87,7 +93,7 @@ pub(crate) unsafe fn create_io_surface_pbuffer(
         egl::TEXTURE_TARGET as EGLint,
         egl::TEXTURE_2D as EGLint,
         EGL_TEXTURE_INTERNAL_FORMAT_ANGLE as EGLint,
-        gl::BGRA as EGLint,
+        internal_format as EGLint,
         egl::TEXTURE_FORMAT as EGLint,
         egl::TEXTURE_RGBA as EGLint,
         EGL_TEXTURE_TYPE_ANGLE as EGLint,

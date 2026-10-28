@@ -108,6 +108,14 @@ pub(crate) fn surface_bind_to_gl_texture(
     const RGB: GLenum = 0x1907;
     const TEXTURE_RECTANGLE_ARB: GLenum = 0x84F5;
     const UNSIGNED_INT_8_8_8_8_REV: GLenum = 0x8367;
+    const UNSIGNED_BYTE: GLenum = 0x1401;
+
+    // The IOSurfaces surfman creates are BGRA, those of other APIs can also be RGBA.
+    let (format, type_) = if surface.pixel_format() == u32::from_be_bytes(*b"RGBA") {
+        (RGBA, UNSIGNED_BYTE)
+    } else {
+        (BGRA, UNSIGNED_INT_8_8_8_8_REV)
+    };
 
     unsafe {
         let context = CGLGetCurrentContext();
@@ -121,8 +129,8 @@ pub(crate) fn surface_bind_to_gl_texture(
             },
             width,
             height,
-            BGRA as GLenum,
-            UNSIGNED_INT_8_8_8_8_REV,
+            format,
+            type_,
             surface as *const IOSurfaceRef as cgl::IOSurfaceRef,
             0,
         );
