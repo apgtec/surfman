@@ -18,6 +18,8 @@ use crate::hardware_buffer::surface::{OhosBufferSurface, OhosWindowSurface};
 use crate::macos::surface::IoSurfaceSurface;
 #[cfg(wayland_platform)]
 use crate::wayland::surface::WaylandWindowSurface;
+#[cfg(wgl)]
+use crate::wgl::surface::GlTextureSurface;
 #[cfg(windows_platform)]
 use crate::windows::surface::{Direct3dSurface, Win32Surface};
 #[cfg(x11_platform)]
@@ -173,6 +175,10 @@ pub enum OffscreenSurface {
     /// A surface backed by a Direct3D 11 texture, used by ANGLE and WGL.
     #[cfg(windows_platform)]
     Direct3d(Direct3dSurface),
+    /// A surface backed by an OpenGL texture that the contexts of a WGL share group read directly,
+    /// used by WGL without `WGL_NV_DX_interop`.
+    #[cfg(wgl)]
+    GlTexture(GlTextureSurface),
     /// A surface backed by an `IOSurface` on macOS.
     #[cfg(macos_platform)]
     IoSurface(IoSurfaceSurface),
@@ -249,6 +255,14 @@ enum_conversion!(
     direct3d,
     IncompatibleSurface
 );
+#[cfg(wgl)]
+enum_conversion!(
+    OffscreenSurface,
+    GlTexture,
+    GlTextureSurface,
+    gl_texture,
+    IncompatibleSurface
+);
 #[cfg(macos_platform)]
 enum_conversion!(
     OffscreenSurface,
@@ -317,6 +331,8 @@ impl OffscreenSurface {
             OffscreenSurface::Android(surface) => surface.0.info(),
             #[cfg(windows_platform)]
             OffscreenSurface::Direct3d(surface) => surface.info(),
+            #[cfg(wgl)]
+            OffscreenSurface::GlTexture(surface) => surface.info(),
             #[cfg(macos_platform)]
             OffscreenSurface::IoSurface(surface) => surface.info(),
             #[cfg(ohos_platform)]
