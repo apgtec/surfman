@@ -115,6 +115,16 @@ impl Direct3dSurface {
             _ => Err(Error::IncompatibleSurface),
         }
     }
+
+    /// Returns the DXGI keyed mutex that orders access to the Direct3D 11 texture behind the share
+    /// handle, if ANGLE made the surface with one. Other devices that open the share handle
+    /// acquire it with key 0 to read the texture and release it with key 0 when done.
+    pub fn keyed_mutex(&self) -> Option<&ComPtr<IDXGIKeyedMutex>> {
+        match self.angle().ok()?.synchronization {
+            Synchronization::KeyedMutex(ref keyed_mutex) => Some(keyed_mutex),
+            _ => None,
+        }
+    }
 }
 
 impl AngleSurface {
