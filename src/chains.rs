@@ -23,8 +23,7 @@
 #![allow(missing_docs)]
 
 use crate::{
-    Context, ContextID, Device, Error, OffscreenSurface, Surface, SurfaceAccess, SurfaceInfo,
-    SurfaceTexture,
+    Context, ContextID, Device, Error, OffscreenSurface, SurfaceAccess, SurfaceInfo, SurfaceTexture,
 };
 use euclid::default::Size2D;
 use fnv::{FnvHashMap, FnvHashSet};
@@ -49,9 +48,9 @@ struct SwapChainData {
     // The back buffer of the swap chain.
     back_buffer: BackBuffer,
     // Some if the producing context has finished drawing a new front buffer, ready to be displayed.
-    pending_surface: Option<Surface>,
+    pending_surface: Option<OffscreenSurface>,
     // All of the surfaces that have already been displayed, ready to be recycled.
-    recycled_surfaces: Vec<Surface>,
+    recycled_surfaces: Vec<OffscreenSurface>,
 }
 
 pub enum PreserveBuffer<'a> {
@@ -61,20 +60,36 @@ pub enum PreserveBuffer<'a> {
 
 enum BackBuffer {
     Attached,
-    Detached(Surface),
+    Detached(OffscreenSurface),
     TakenAttached,
     TakenDetached,
 }
 
 impl BackBuffer {
-    fn take_surface(&mut self, device: &Device, context: &mut Context) -> Result<Surface, Error> {
+    fn take_surface(
+        &mut self,
+        device: &Device,
+        context: &mut Context,
+    ) -> Result<OffscreenSurface, Error> {
         let new_back_buffer = match self {
             BackBuffer::Attached => BackBuffer::TakenAttached,
             BackBuffer::Detached(_) => BackBuffer::TakenDetached,
             _ => return Err(Error::Failed),
         };
         let surface = match mem::replace(self, new_back_buffer) {
-            BackBuffer::Attached => device.unbind_surface_from_context(context)?.unwrap(),
+            BackBuffer::Attached => {
+                let surface = device.unbind_surface_from_context(context)?.unwrap();
+                match OffscreenSurface::try_from(surface) {
+                    Ok(surface) => surface,
+                    Err((error, surface)) => {
+                        // Swap chains only work with offscreen surfaces, so put back the window
+                        // surface that the context had bound.
+                        *self = BackBuffer::Attached;
+                        let _ = device.bind_surface_to_context(context, surface);
+                        return Err(error);
+                    }
+                }
+            }
             BackBuffer::Detached(surface) => surface,
             _ => unreachable!(),
         };
@@ -85,37 +100,32 @@ impl BackBuffer {
         device: &Device,
         context: &mut Context,
     ) -> Result<SurfaceTexture, Error> {
-        let surface = match OffscreenSurface::try_from(self.take_surface(device, context)?) {
-            Ok(surface) => surface,
-            Err((error, surface)) => {
-                let _ = self.replace_surface(device, context, surface);
-                return Err(error);
-            }
-        };
+        let surface = self.take_surface(device, context)?;
         device
             .create_surface_texture(context, surface)
-            .map_err(|(err, surface)| {
-                let _ = self.replace_surface(device, context, surface.into());
-                err
+            .map_err(|(error, surface)| {
+                let _ = self.replace_surface(device, context, surface);
+                error
             })
     }
     fn replace_surface(
         &mut self,
         device: &Device,
         context: &mut Context,
-        mut surface: Surface,
+        mut surface: OffscreenSurface,
     ) -> Result<(), Error> {
         let new_back_buffer = match self {
             BackBuffer::TakenAttached => {
                 // Something else bound a surface while the swap chain had taken its back buffer.
                 if device.context_surface_info(context)?.is_some() {
-                    let _ = device.destroy_surface(context, &mut surface);
+                    let _ = device.destroy_offscreen_surface(context, &mut surface);
                     return Err(Error::Failed);
                 }
-                if let Err((err, mut surface)) = device.bind_surface_to_context(context, surface) {
+                if let Err((error, mut surface)) = device.bind_surface_to_context(context, surface)
+                {
                     debug!("Oh no, destroying surface");
                     let _ = device.destroy_surface(context, &mut surface);
-                    return Err(err);
+                    return Err(error);
                 }
                 BackBuffer::Attached
             }
@@ -133,8 +143,8 @@ impl BackBuffer {
     ) -> Result<(), Error> {
         let surface = device
             .destroy_surface_texture(context, surface_texture)
-            .map_err(|(err, _)| err)?;
-        self.replace_surface(device, context, surface.into())
+            .map_err(|(error, _)| error)?;
+        self.replace_surface(device, context, surface)
     }
 }
 
@@ -184,9 +194,7 @@ impl SwapChainData {
                     "Creating a new surface ({:?}) for context {:?}",
                     self.size, self.context_id
                 );
-                device
-                    .create_offscreen_surface(context, self.surface_access, self.size)
-                    .map(Surface::from)
+                device.create_offscreen_surface(context, self.surface_access, self.size)
             })?;
 
         let back_info = new_back_buffer.info();
@@ -278,15 +286,14 @@ impl SwapChainData {
         if (size.width < 1) || (size.height < 1) {
             return Err(Error::Failed);
         }
-        let new_back_buffer = device
-            .create_offscreen_surface(context, self.surface_access, size)?
-            .into();
+        let new_back_buffer =
+            device.create_offscreen_surface(context, self.surface_access, size)?;
         let mut old_back_buffer = self.back_buffer.take_surface(device, context)?;
         self.back_buffer
             .replace_surface(device, context, new_back_buffer)?;
-        device.destroy_surface(context, &mut old_back_buffer)?;
+        device.destroy_offscreen_surface(context, &mut old_back_buffer)?;
         for mut surface in self.recycled_surfaces.drain(..) {
-            device.destroy_surface(context, &mut surface)?;
+            device.destroy_offscreen_surface(context, &mut surface)?;
         }
         self.size = size;
         Ok(())
@@ -325,7 +332,7 @@ impl SwapChainData {
     // Take the current front buffer.
     // Returns the most recent recycled surface if there is no current front buffer.
     // Called by a consumer.
-    fn take_surface(&mut self) -> Option<Surface> {
+    fn take_surface(&mut self) -> Option<OffscreenSurface> {
         self.pending_surface
             .take()
             .or_else(|| self.recycled_surfaces.pop())
@@ -334,13 +341,13 @@ impl SwapChainData {
     // Take the current front buffer.
     // Returns `None` if there is no current front buffer.
     // Called by a consumer.
-    fn take_pending_surface(&mut self) -> Option<Surface> {
+    fn take_pending_surface(&mut self) -> Option<OffscreenSurface> {
         self.pending_surface.take()
     }
 
     // Recycle the current front buffer.
     // Called by a consumer.
-    fn recycle_surface(&mut self, surface: Surface) {
+    fn recycle_surface(&mut self, surface: OffscreenSurface) {
         self.recycled_surfaces.push(surface)
     }
 
@@ -415,6 +422,14 @@ impl SwapChainData {
         if let Some(surface) = reattach {
             match device.bind_surface_to_context(context, surface) {
                 Ok(Some(old_surface)) => {
+                    // This is the back buffer bound above, so it is an offscreen surface.
+                    let old_surface = match OffscreenSurface::try_from(old_surface) {
+                        Ok(surface) => surface,
+                        Err((error, mut surface)) => {
+                            let _ = device.destroy_surface(context, &mut surface);
+                            return Err(error);
+                        }
+                    };
                     self.back_buffer
                         .replace_surface(device, context, old_surface)?;
                 }
@@ -473,7 +488,7 @@ impl SwapChainData {
             .chain(self.back_buffer.take_surface(device, context))
             .chain(self.recycled_surfaces.drain(..));
         for mut surface in surfaces {
-            device.destroy_surface(context, &mut surface)?;
+            device.destroy_offscreen_surface(context, &mut surface)?;
         }
         Ok(())
     }
@@ -566,7 +581,7 @@ impl SwapChain {
     /// Take the current front buffer.
     /// Returns `None` if there is no current front buffer.
     /// Called by a consumer.
-    pub fn take_pending_surface(&self) -> Option<Surface> {
+    pub fn take_pending_surface(&self) -> Option<OffscreenSurface> {
         self.lock().take_pending_surface()
     }
 
@@ -619,9 +634,7 @@ impl SwapChain {
         surface_access: SurfaceAccess,
         size: Size2D<i32>,
     ) -> Result<SwapChain, Error> {
-        let surface = device
-            .create_offscreen_surface(context, surface_access, size)?
-            .into();
+        let surface = device.create_offscreen_surface(context, surface_access, size)?;
         Ok(SwapChain(Arc::new(Mutex::new(SwapChainData {
             size,
             context_id: device.context_id(context),
@@ -637,13 +650,13 @@ impl SwapChainAPI for SwapChain {
     /// Take the current front buffer.
     /// Returns the most recent recycled surface if there is no current front buffer.
     /// Called by a consumer.
-    fn take_surface(&self) -> Option<Surface> {
+    fn take_surface(&self) -> Option<OffscreenSurface> {
         self.lock().take_surface()
     }
 
     /// Recycle the current front buffer.
     /// Called by a consumer.
-    fn recycle_surface(&self, surface: Surface) {
+    fn recycle_surface(&self, surface: OffscreenSurface) {
         self.lock().recycle_surface(surface)
     }
 }
@@ -791,10 +804,10 @@ where
 /// The consumer's view of a swap chain
 pub trait SwapChainAPI: 'static + Clone + Send {
     /// Take the current front buffer.
-    fn take_surface(&self) -> Option<Surface>;
+    fn take_surface(&self) -> Option<OffscreenSurface>;
 
     /// Recycle the current front buffer.
-    fn recycle_surface(&self, surface: Surface);
+    fn recycle_surface(&self, surface: OffscreenSurface);
 }
 
 /// The consumer's view of a collection of swap chains
