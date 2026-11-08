@@ -360,34 +360,6 @@ impl Device {
         dispatch!(Device, self, device => device.resize_surface(context, surface, size))
     }
 
-    /// Returns various information about a window surface, including the framebuffer object
-    /// needed to render to this surface.
-    ///
-    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
-    /// on the framebuffer object returned by this function. This framebuffer object may or not be
-    /// 0, the default framebuffer, depending on platform.
-    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
-        dispatch!(Device, self, device => device.window_surface_info(surface))
-    }
-
-    /// Returns various information about a offscreen surface, including the framebuffer object
-    /// needed to render to this surface.
-    ///
-    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
-    /// on the framebuffer object returned by this function. This framebuffer object may or not be
-    /// 0, the default framebuffer, depending on platform.
-    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
-        dispatch!(Device, self, device => device.offscreen_surface_info(surface))
-    }
-
-    /// Returns information about a surface of either kind.
-    pub(crate) fn surface_info(&self, surface: &Surface) -> SurfaceInfo {
-        match surface {
-            Surface::Window(surface) => self.window_surface_info(surface),
-            Surface::Offscreen(surface) => self.offscreen_surface_info(surface),
-        }
-    }
-
     /// Returns the OpenGL texture object containing the contents of this surface.
     ///
     /// It is only legal to read from, not write to, this texture object.

@@ -9,8 +9,7 @@ use crate::base::egl::surface::ExternalEGLSurfaces;
 use crate::context::{ContextID, CREATE_CONTEXT_MUTEX};
 use crate::egl::types::{EGLConfig, EGLDisplay, EGLint};
 use crate::hardware_buffer::surface::{
-    buffer_surface, window_surface, HardwareBufferSurface, PlatformBufferSurface,
-    PlatformWindowSurface,
+    HardwareBufferSurface, PlatformBufferSurface, PlatformWindowSurface,
 };
 use crate::surface::Framebuffer;
 use crate::Adapter;
@@ -412,22 +411,6 @@ impl HardwareBufferDevice {
         let context: &mut HardwareBufferContext = context.try_into()?;
         let surface: &mut PlatformBufferSurface = surface.try_into()?;
         self.destroy_native_buffer_surface(context, &mut surface.0)
-    }
-
-    /// See [`crate::Device::window_surface_info`].
-    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
-        window_surface(surface)
-            .expect("Incompatible surface type")
-            .0
-            .info()
-    }
-
-    /// See [`crate::Device::offscreen_surface_info`].
-    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
-        buffer_surface(surface)
-            .expect("Incompatible surface type")
-            .0
-            .info()
     }
 
     /// Returns the attributes that the context descriptor was created with.

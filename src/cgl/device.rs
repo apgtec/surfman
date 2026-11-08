@@ -858,20 +858,6 @@ impl CglDevice {
         }
     }
 
-    /// See [`crate::Device::window_surface_info`].
-    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
-        let CglWindowSurface(surface) = surface.app_kit().expect("Incompatible surface type");
-        surface.info()
-    }
-
-    /// See [`crate::Device::offscreen_surface_info`].
-    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
-        surface
-            .io_surface()
-            .expect("Incompatible surface type")
-            .info()
-    }
-
     /// Returns the native `IOSurface` corresponding to this surface.
     ///
     /// The reference count is increased on the `IOSurface` before returning.

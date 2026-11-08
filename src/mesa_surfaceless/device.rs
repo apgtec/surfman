@@ -482,18 +482,6 @@ impl SurfacelessMesaDevice {
         SURFACE_GL_TEXTURE_TARGET
     }
 
-    /// See [`crate::Device::window_surface_info`].
-    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
-        let _ = surface;
-        panic!("Incompatible surface type")
-    }
-
-    /// See [`crate::Device::offscreen_surface_info`].
-    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
-        let PbufferSurface(surface) = surface.pbuffer().expect("Incompatible surface type");
-        surface.info()
-    }
-
     /// Returns the OpenGL texture object containing the contents of this surface.
     ///
     /// It is only legal to read from, not write to, this texture object.

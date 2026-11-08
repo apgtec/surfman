@@ -1251,19 +1251,6 @@ impl WglDevice {
         Ok(())
     }
 
-    /// See [`crate::Device::window_surface_info`].
-    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
-        surface.win32().expect("Incompatible surface type").info()
-    }
-
-    /// See [`crate::Device::offscreen_surface_info`].
-    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
-        surface
-            .direct3d()
-            .expect("Incompatible surface type")
-            .info()
-    }
-
     /// Returns the OpenGL texture object containing the contents of this surface.
     ///
     /// It is only legal to read from, not write to, this texture object.

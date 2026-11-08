@@ -95,13 +95,6 @@ pub(crate) fn window_surface(surface: &WindowSurface) -> Result<&PlatformWindowS
     return surface.ohos();
 }
 
-pub(crate) fn buffer_surface(surface: &OffscreenSurface) -> Result<&PlatformBufferSurface, Error> {
-    #[cfg(android_platform)]
-    return surface.android();
-    #[cfg(ohos_platform)]
-    return surface.ohos();
-}
-
 impl TryFrom<Surface> for HardwareBufferSurface {
     type Error = (Error, Surface);
     fn try_from(surface: Surface) -> Result<HardwareBufferSurface, Self::Error> {

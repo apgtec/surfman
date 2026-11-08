@@ -274,6 +274,59 @@ enum_conversion!(
     IncompatibleSurface
 );
 
+impl Surface {
+    /// Returns various information about the surface, including the framebuffer object needed to
+    /// render to it.
+    ///
+    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
+    /// on the framebuffer object returned by this function. This framebuffer object may or not be
+    /// 0, the default framebuffer, depending on platform.
+    pub fn info(&self) -> SurfaceInfo {
+        match self {
+            Surface::Window(surface) => surface.info(),
+            Surface::Offscreen(surface) => surface.info(),
+        }
+    }
+}
+
+impl WindowSurface {
+    /// Returns various information about the surface. See [`Surface::info`].
+    pub fn info(&self) -> SurfaceInfo {
+        match self {
+            #[cfg(android_platform)]
+            WindowSurface::Android(surface) => surface.0.info(),
+            #[cfg(macos_platform)]
+            WindowSurface::AppKit(surface) => surface.0.info(),
+            #[cfg(ohos_platform)]
+            WindowSurface::Ohos(surface) => surface.0.info(),
+            #[cfg(wayland_platform)]
+            WindowSurface::Wayland(surface) => surface.0.info(),
+            #[cfg(windows_platform)]
+            WindowSurface::Win32(surface) => surface.info(),
+            #[cfg(x11_platform)]
+            WindowSurface::X11(surface) => surface.0.info(),
+        }
+    }
+}
+
+impl OffscreenSurface {
+    /// Returns various information about the surface. See [`Surface::info`].
+    pub fn info(&self) -> SurfaceInfo {
+        match self {
+            #[cfg(android_platform)]
+            OffscreenSurface::Android(surface) => surface.0.info(),
+            #[cfg(windows_platform)]
+            OffscreenSurface::Direct3d(surface) => surface.info(),
+            #[cfg(macos_platform)]
+            OffscreenSurface::IoSurface(surface) => surface.info(),
+            #[cfg(ohos_platform)]
+            OffscreenSurface::Ohos(surface) => surface.0.info(),
+            #[cfg(free_unix)]
+            OffscreenSurface::Pbuffer(surface) => surface.0.info(),
+        }
+    }
+}
+
 impl From<WindowSurface> for Surface {
     fn from(surface: WindowSurface) -> Surface {
         Surface::Window(surface)
