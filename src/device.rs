@@ -317,11 +317,13 @@ impl Device {
         dispatch!(Device, self, device => device.surface_gl_texture_target())
     }
 
-    /// Displays the contents of the currently bound surface to the screen, if
-    /// it is a window surface.
+    /// Displays the contents of the window surface bound to this context on screen.
     ///
-    /// Window surfaces are internally double-buffered, so changes to them don't
-    /// show up in their associated widgets until this method is called.
+    /// Window surfaces are internally double-buffered, so changes to them don't show up in their
+    /// associated widgets until this method is called.
+    ///
+    /// Does nothing if no surface is bound, and returns a `NoWidgetAttached` error if the bound
+    /// surface is an offscreen surface.
     pub fn present_bound_surface(&self, context: &mut Context) -> Result<(), Error> {
         dispatch!(Device, self, device => device.present_bound_surface(context))
     }
@@ -341,7 +343,10 @@ impl Device {
         dispatch!(Device, self, device => device.present_surface(context, surface))
     }
 
-    /// If the currently bound surface is a window surface, resize it,
+    /// Resizes the window surface bound to this context.
+    ///
+    /// Does nothing if no surface is bound, and returns a `NoWidgetAttached` error if the bound
+    /// surface is an offscreen surface, since offscreen surfaces cannot be resized.
     pub fn resize_bound_surface(
         &self,
         context: &mut Context,
