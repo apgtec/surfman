@@ -601,7 +601,7 @@ impl CglDevice {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let surface: IoSurfaceSurface = surface.try_into()?;
@@ -664,7 +664,7 @@ impl CglDevice {
 
     fn destroy_surface_inner(
         &self,
-        context: &mut CglContext,
+        context: &CglContext,
         surface: &mut CglSurface,
     ) -> Result<(), Error> {
         let gl = &context.gl;
@@ -689,17 +689,17 @@ impl CglDevice {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let surface: &mut CglWindowSurface = surface.try_into()?;
-        self.destroy_surface_inner(context.try_into()?, &mut surface.0)
+        self.destroy_surface_inner(context.cgl()?, &mut surface.0)
     }
 
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         #[allow(unreachable_patterns)]
@@ -710,7 +710,7 @@ impl CglDevice {
             }) => surface,
             _ => return Err(Error::IncompatibleSurface),
         };
-        self.destroy_surface_inner(context.try_into()?, surface)
+        self.destroy_surface_inner(context.cgl()?, surface)
     }
 
     /// Destroys a surface texture and returns the underlying surface.
@@ -722,7 +722,7 @@ impl CglDevice {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let concrete_context = match context.cgl() {

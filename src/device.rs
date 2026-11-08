@@ -247,7 +247,7 @@ impl Device {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         dispatch!(Device, self, device => device.create_surface_texture(context, surface))
@@ -262,7 +262,7 @@ impl Device {
     /// the `drop` method.
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         dispatch!(Device, self, device => device.destroy_window_surface(context, surface))
@@ -277,7 +277,7 @@ impl Device {
     /// the `drop` method.
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         dispatch!(Device, self, device => device.destroy_offscreen_surface(context, surface))
@@ -304,7 +304,7 @@ impl Device {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         dispatch!(Device, self, device => device.destroy_surface_texture(context, surface_texture))

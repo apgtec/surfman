@@ -398,10 +398,10 @@ impl HardwareBufferDevice {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
-        let context: &mut HardwareBufferContext = context.try_into()?;
+        let context = context.hardware_buffer()?;
         let surface: &mut PlatformWindowSurface = surface.try_into()?;
         self.destroy_native_window_surface(context, &mut surface.0)
     }
@@ -409,10 +409,10 @@ impl HardwareBufferDevice {
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
-        let context: &mut HardwareBufferContext = context.try_into()?;
+        let context = context.hardware_buffer()?;
         let surface: &mut PlatformBufferSurface = surface.try_into()?;
         self.destroy_native_buffer_surface(context, &mut surface.0)
     }

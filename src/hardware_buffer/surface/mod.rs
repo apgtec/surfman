@@ -296,11 +296,11 @@ impl HardwareBufferDevice {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let surface: PlatformBufferSurface = surface.try_into()?;
-        let context: &mut HardwareBufferContext = match context.try_into() {
+        let context = match context.hardware_buffer() {
             Ok(context) => context,
             Err(error) => return Err((error, surface.into())),
         };
@@ -392,7 +392,7 @@ impl HardwareBufferDevice {
 
     pub(crate) fn destroy_native_window_surface(
         &self,
-        context: &mut HardwareBufferContext,
+        context: &HardwareBufferContext,
         surface: &mut NativeWindowSurface,
     ) -> Result<(), Error> {
         if context.id != surface.context_id {
@@ -410,7 +410,7 @@ impl HardwareBufferDevice {
 
     pub(crate) fn destroy_native_buffer_surface(
         &self,
-        context: &mut HardwareBufferContext,
+        context: &HardwareBufferContext,
         surface: &mut NativeBufferSurface,
     ) -> Result<(), Error> {
         if context.id != surface.context_id {
@@ -449,10 +449,10 @@ impl HardwareBufferDevice {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
-        let context: &mut HardwareBufferContext = match context.try_into() {
+        let context = match context.hardware_buffer() {
             Ok(context) => context,
             Err(error) => return Err((error, surface_texture)),
         };

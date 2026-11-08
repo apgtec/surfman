@@ -816,7 +816,7 @@ impl AngleDevice {
     #[allow(non_snake_case)]
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let surface: Direct3dSurface = surface.try_into()?;
@@ -962,7 +962,7 @@ impl AngleDevice {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let context_id = context.angle()?.id;
@@ -975,7 +975,7 @@ impl AngleDevice {
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         let context_id = context.angle()?.id;
@@ -1035,7 +1035,7 @@ impl AngleDevice {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let context = match context.angle() {

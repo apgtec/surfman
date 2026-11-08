@@ -378,7 +378,7 @@ impl SurfacelessMesaDevice {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let _guard = match self.temporarily_make_context_current(context) {
@@ -398,7 +398,7 @@ impl SurfacelessMesaDevice {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let _ = (context, surface);
@@ -408,11 +408,11 @@ impl SurfacelessMesaDevice {
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         let egl_display = self.native_connection.egl_display;
-        let context: &mut SurfacelessMesaContext = context.try_into()?;
+        let context = context.surfaceless_mesa()?;
         let surface: &mut PbufferSurface = surface.try_into()?;
         surface.0.destroy(&context.1, egl_display, context.0.id)
     }
@@ -433,7 +433,7 @@ impl SurfacelessMesaDevice {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let concrete_context = match context.surfaceless_mesa() {

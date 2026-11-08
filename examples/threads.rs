@@ -241,10 +241,7 @@ impl App {
         };
         let texture = Some(
             device
-                .create_surface_texture(
-                    &mut context,
-                    frame.surface.take().unwrap().try_into().unwrap(),
-                )
+                .create_surface_texture(&context, frame.surface.take().unwrap().try_into().unwrap())
                 .unwrap(),
         );
 
@@ -265,7 +262,7 @@ impl App {
         // Send back our old surface.
         let surface = self
             .device
-            .destroy_surface_texture(&mut self.context, self.texture.take().unwrap())
+            .destroy_surface_texture(&self.context, self.texture.take().unwrap())
             .unwrap();
         self.main_to_worker_sender.send(surface.into()).unwrap();
 
@@ -276,7 +273,7 @@ impl App {
         self.texture = Some(
             self.device
                 .create_surface_texture(
-                    &mut self.context,
+                    &self.context,
                     self.frame.surface.take().unwrap().try_into().unwrap(),
                 )
                 .unwrap(),
@@ -426,7 +423,7 @@ impl App {
                 .unwrap();
             if let Surface::Window(ref mut window_surface) = surface {
                 self.device
-                    .present_surface(&mut self.context, window_surface)
+                    .present_surface(&self.context, window_surface)
                     .unwrap();
             }
             assert!(self

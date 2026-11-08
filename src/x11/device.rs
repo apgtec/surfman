@@ -409,7 +409,7 @@ impl X11Device {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let _guard = match self.temporarily_make_context_current(context) {
@@ -429,7 +429,7 @@ impl X11Device {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let egl_display = self.native_connection.egl_display;
@@ -442,7 +442,7 @@ impl X11Device {
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         let egl_display = self.native_connection.egl_display;
@@ -467,7 +467,7 @@ impl X11Device {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let concrete_context = match context.x11() {

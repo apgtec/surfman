@@ -938,7 +938,7 @@ impl WglDevice {
     /// See [`crate::Device::destroy_window_surface`].
     pub fn destroy_window_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let context_id = context.wgl()?.id;
@@ -953,7 +953,7 @@ impl WglDevice {
     /// See [`crate::Device::destroy_offscreen_surface`].
     pub fn destroy_offscreen_surface(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: &mut OffscreenSurface,
     ) -> Result<(), Error> {
         let dx_interop_functions = WGL_EXTENSION_FUNCTIONS
@@ -1010,7 +1010,7 @@ impl WglDevice {
     /// in another context.
     pub fn create_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface: OffscreenSurface,
     ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let surface: Direct3dSurface = surface.try_into()?;
@@ -1120,7 +1120,7 @@ impl WglDevice {
     /// occur.
     pub fn destroy_surface_texture(
         &self,
-        context: &mut Context,
+        context: &Context,
         surface_texture: SurfaceTexture,
     ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let dx_interop_functions = WGL_EXTENSION_FUNCTIONS
