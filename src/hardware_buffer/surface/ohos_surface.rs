@@ -41,7 +41,7 @@ impl Debug for OhosBufferSurface {
 pub(crate) fn native_window(window_handle: RawWindowHandle) -> Result<*mut NativeWindow, Error> {
     match window_handle {
         RawWindowHandle::OhosNdk(handle) => Ok(handle.native_window.as_ptr().cast()),
-        _ => Err(Error::IncompatibleSurfaceType),
+        _ => Err(Error::IncompatibleRawWindowHandle),
     }
 }
 

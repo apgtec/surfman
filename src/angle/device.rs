@@ -633,7 +633,7 @@ impl AngleDevice {
         _: Size2D<i32>,
     ) -> Result<WindowSurface, Error> {
         let RawWindowHandle::Win32(handle) = window_handle.as_raw() else {
-            return Err(Error::IncompatibleSurfaceType);
+            return Err(Error::IncompatibleRawWindowHandle);
         };
         self.create_hwnd_surface(context, handle.hwnd.get() as HWND)
     }

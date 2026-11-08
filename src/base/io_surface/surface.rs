@@ -110,7 +110,7 @@ impl Device {
         window_handle: WindowHandle<'_>,
     ) -> Result<Surface, Error> {
         let RawWindowHandle::AppKit(handle) = window_handle.as_raw() else {
-            return Err(Error::IncompatibleSurfaceType);
+            return Err(Error::IncompatibleRawWindowHandle);
         };
 
         assert!(

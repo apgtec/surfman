@@ -43,7 +43,7 @@ impl Debug for AndroidBufferSurface {
 pub(crate) fn native_window(window_handle: RawWindowHandle) -> Result<*mut NativeWindow, Error> {
     match window_handle {
         RawWindowHandle::AndroidNdk(handle) => Ok(handle.a_native_window.as_ptr().cast()),
-        _ => Err(Error::IncompatibleSurfaceType),
+        _ => Err(Error::IncompatibleRawWindowHandle),
     }
 }
 

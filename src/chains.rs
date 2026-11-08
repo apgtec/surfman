@@ -107,9 +107,10 @@ impl BackBuffer {
     ) -> Result<(), Error> {
         let new_back_buffer = match self {
             BackBuffer::TakenAttached => {
+                // Something else bound a surface while the swap chain had taken its back buffer.
                 if device.context_surface_info(context)?.is_some() {
                     let _ = device.destroy_surface(context, &mut surface);
-                    return Err(Error::SurfaceAlreadyBound);
+                    return Err(Error::Failed);
                 }
                 if let Err((err, mut surface)) = device.bind_surface_to_context(context, surface) {
                     debug!("Oh no, destroying surface");

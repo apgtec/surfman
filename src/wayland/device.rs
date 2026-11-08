@@ -343,7 +343,7 @@ impl WaylandDevice {
         size: Size2D<i32>,
     ) -> Result<WindowSurface, Error> {
         let RawWindowHandle::Wayland(handle) = window_handle.as_raw() else {
-            return Err(Error::IncompatibleSurfaceType);
+            return Err(Error::IncompatibleRawWindowHandle);
         };
         unsafe {
             self.create_wayland_window_surface(
