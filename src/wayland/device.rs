@@ -8,15 +8,17 @@ use crate::base::egl::surface::{EGLBackedSurface, EGLBufferSurface, EGLWindowSur
 use crate::context::ContextID;
 use crate::egl::types::EGLint;
 use crate::free_unix::adapter::FreeUnixAdapter;
+use crate::free_unix::surface::PbufferSurface;
 use crate::surface::Framebuffer;
-use crate::wayland::surface::{WaylandSurface, WaylandSurfaceTexture};
+use crate::wayland::surface::{WaylandSurfaceTexture, WaylandWindowSurface};
 use crate::{
     egl, gl, Adapter, Context, ContextAttributes, ContextDescriptor, EglContextDescriptor, Error,
-    GLApi, Gl, Surface, SurfaceAccess, SurfaceInfo, SurfaceTexture, SurfaceType,
+    GLApi, Gl, OffscreenSurface, Surface, SurfaceAccess, SurfaceInfo, SurfaceTexture,
+    WindowSurface,
 };
 use euclid::default::Size2D;
 use glow::Texture;
-use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{RawWindowHandle, WindowHandle};
 use std::os::raw::c_void;
 use std::sync::Arc;
 use wayland_sys::client::wl_proxy;
@@ -250,16 +252,23 @@ impl WaylandDevice {
             Ok(context) => context,
             Err(error) => return Err((error, surface)),
         };
-        let surface: WaylandSurface = surface.try_into()?;
+        #[allow(unreachable_patterns)]
+        let surface = match surface {
+            Surface::Window(WindowSurface::Wayland(WaylandWindowSurface(surface))) => {
+                EGLBackedSurface::Window(surface)
+            }
+            Surface::Offscreen(OffscreenSurface::Pbuffer(PbufferSurface(surface))) => {
+                EGLBackedSurface::Buffer(surface)
+            }
+            surface => return Err((Error::IncompatibleSurface, surface)),
+        };
 
         unsafe {
-            match context
+            context
                 .0
-                .bind_surface(&context.1, self.native_connection.egl_display, surface.0)
-            {
-                Ok(surface) => Ok(surface.map(|surface| WaylandSurface(surface).into())),
-                Err((error, surface)) => Err((error, WaylandSurface(surface).into())),
-            }
+                .bind_surface(&context.1, self.native_connection.egl_display, surface)
+                .map(|surface| surface.map(egl_surface_into_surface))
+                .map_err(|(error, surface)| (error, egl_surface_into_surface(surface)))
         }
     }
 
@@ -273,14 +282,14 @@ impl WaylandDevice {
             context
                 .0
                 .unbind_surface(&context.1, self.native_connection.egl_display)
-                .map(|maybe_surface| maybe_surface.map(WaylandSurface).map(Into::into))
+                .map(|maybe_surface| maybe_surface.map(egl_surface_into_surface))
         }
     }
 
     /// Displays the contents of the currently bound surface to the screen, if
-    /// it is a widget surface.
+    /// it is a window surface.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't
+    /// Window surfaces are internally double-buffered, so changes to them don't
     /// show up in their associated widgets until this method is called.
     pub fn present_bound_surface(&self, context: &mut Context) -> Result<(), Error> {
         let context: &mut WaylandContext = context.try_into()?;
@@ -289,7 +298,7 @@ impl WaylandDevice {
             .present_bound_surface(self.native_connection.egl_display)
     }
 
-    /// If the currently bound surface is a widget surface, resize it,
+    /// If the currently bound surface is a window surface, resize it,
     pub fn resize_bound_surface(
         &self,
         context: &mut Context,
@@ -325,65 +334,55 @@ impl WaylandDevice {
         context.0.surface_info()
     }
 
-    /// Creates either a generic or a widget surface, depending on the supplied surface type.
-    ///
-    /// Only the given context may ever render to the surface, but generic surfaces can be wrapped
-    /// up in a `SurfaceTexture` for reading by other contexts.
-    pub fn create_surface(
+    /// See [`crate::Device::create_window_surface`].
+    pub fn create_window_surface(
         &self,
         context: &Context,
         _: SurfaceAccess,
-        surface_type: SurfaceType<'_>,
-    ) -> Result<Surface, Error> {
-        match surface_type {
-            SurfaceType::Generic { size } => self.create_generic_surface(context, &size),
-            SurfaceType::Widget {
-                window_handle,
-                size,
-            } => {
-                let RawWindowHandle::Wayland(handle) = window_handle.as_raw() else {
-                    return Err(Error::IncompatibleSurfaceType);
-                };
-                unsafe {
-                    self.create_window_surface(
-                        context,
-                        handle.surface.as_ptr() as *mut wl_proxy,
-                        &size,
-                    )
-                }
-            }
+        window_handle: WindowHandle<'_>,
+        size: Size2D<i32>,
+    ) -> Result<WindowSurface, Error> {
+        let RawWindowHandle::Wayland(handle) = window_handle.as_raw() else {
+            return Err(Error::IncompatibleSurfaceType);
+        };
+        unsafe {
+            self.create_wayland_window_surface(
+                context,
+                handle.surface.as_ptr() as *mut wl_proxy,
+                &size,
+            )
         }
     }
 
-    fn create_generic_surface(
+    /// See [`crate::Device::create_offscreen_surface`].
+    pub fn create_offscreen_surface(
         &self,
         context: &Context,
-        size: &Size2D<i32>,
-    ) -> Result<Surface, Error> {
+        _: SurfaceAccess,
+        size: Size2D<i32>,
+    ) -> Result<OffscreenSurface, Error> {
         let _guard = self.temporarily_make_context_current(context)?;
         let context_descriptor = self.context_descriptor(context);
         let context_attributes = self.context_descriptor_attributes(&context_descriptor);
         let context = context.wayland()?;
 
-        Ok(
-            WaylandSurface(EGLBackedSurface::Buffer(EGLBufferSurface::new(
-                &context.1,
-                self.native_connection.egl_display,
-                context.0.egl_context,
-                context.0.id,
-                &context_attributes,
-                size,
-            )))
-            .into(),
-        )
+        Ok(PbufferSurface(EGLBufferSurface::new(
+            &context.1,
+            self.native_connection.egl_display,
+            context.0.egl_context,
+            context.0.id,
+            &context_attributes,
+            &size,
+        ))
+        .into())
     }
 
-    unsafe fn create_window_surface(
+    unsafe fn create_wayland_window_surface(
         &self,
         context: &Context,
         wayland_surface: *mut wl_proxy,
         size: &Size2D<i32>,
-    ) -> Result<Surface, Error> {
+    ) -> Result<WindowSurface, Error> {
         let egl_window =
             (wayland_egl_handle().wl_egl_window_create)(wayland_surface, size.width, size.height);
         assert!(!egl_window.is_null());
@@ -396,19 +395,17 @@ impl WaylandDevice {
         );
         let context = context.wayland()?;
 
-        Ok(
-            WaylandSurface(EGLBackedSurface::Window(EGLWindowSurface::new(
-                self.native_connection.egl_display,
-                egl_config,
-                egl_window as *mut c_void,
-                context.0.id,
-                size,
-            )))
-            .into(),
-        )
+        Ok(WaylandWindowSurface(EGLWindowSurface::new(
+            self.native_connection.egl_display,
+            egl_config,
+            egl_window as *mut c_void,
+            context.0.id,
+            size,
+        ))
+        .into())
     }
 
-    /// Creates a surface texture from an existing generic surface for use with the given context.
+    /// Creates a surface texture from an existing offscreen surface for use with the given context.
     ///
     /// The surface texture is local to the supplied context and takes ownership of the surface.
     /// Destroying the surface texture allows you to retrieve the surface again.
@@ -416,13 +413,11 @@ impl WaylandDevice {
     /// *The supplied context does not have to be the same context that the surface is associated
     /// with.* This allows you to render to a surface in one context and sample from that surface
     /// in another context.
-    ///
-    /// Calling this method on a widget surface returns a `WidgetAttached` error.
     pub fn create_surface_texture(
         &self,
         context: &mut Context,
-        surface: Surface,
-    ) -> Result<SurfaceTexture, (Error, Surface)> {
+        surface: OffscreenSurface,
+    ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         let _guard = match self.temporarily_make_context_current(context) {
             Ok(guard) => guard,
             Err(err) => return Err((err, surface)),
@@ -432,46 +427,45 @@ impl WaylandDevice {
             Ok(context) => context,
             Err(error) => return Err((error, surface)),
         };
-        let surface: WaylandSurface = surface.try_into()?;
+        let PbufferSurface(surface): PbufferSurface = surface.try_into()?;
 
-        match surface.0 {
-            EGLBackedSurface::Buffer(surface) => {
-                Ok(WaylandSurfaceTexture(surface.to_surface_texture(&context.1)).into())
-            }
-            EGLBackedSurface::Window(..) => {
-                Err((Error::WidgetAttached, WaylandSurface(surface.0).into()))
-            }
-        }
+        Ok(WaylandSurfaceTexture(surface.to_surface_texture(&context.1)).into())
     }
 
-    /// Destroys a surface.
-    ///
-    /// The supplied context must be the context the surface is associated with, or this returns
-    /// an `IncompatibleSurface` error.
-    ///
-    /// You must explicitly call this method to dispose of a surface. Otherwise, a panic occurs in
-    /// the `drop` method.
-    pub fn destroy_surface(
+    /// See [`crate::Device::destroy_window_surface`].
+    pub fn destroy_window_surface(
         &self,
         context: &mut Context,
-        surface: &mut Surface,
+        surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let egl_display = self.native_connection.egl_display;
         let context = context.wayland()?;
-        let surface: &mut WaylandSurface = surface.try_into()?;
-        match surface.0 {
-            EGLBackedSurface::Window(ref mut surface) => {
-                let wayland_egl_window = surface.destroy(egl_display, context.0.id)?;
-                unsafe {
-                    let wayland_egl_window = wayland_egl_window as *mut wl_egl_window;
-                    (wayland_egl_handle().wl_egl_window_destroy)(wayland_egl_window);
-                }
-            }
-            EGLBackedSurface::Buffer(ref mut surface) => {
-                surface.destroy(&context.1, egl_display, context.0.id)?;
-            }
+        let surface: &mut WaylandWindowSurface = surface.try_into()?;
+        let wayland_egl_window = surface.0.destroy(egl_display, context.0.id)?;
+        unsafe {
+            let wayland_egl_window = wayland_egl_window as *mut wl_egl_window;
+            (wayland_egl_handle().wl_egl_window_destroy)(wayland_egl_window);
         }
         Ok(())
+    }
+
+    /// See [`crate::Device::destroy_offscreen_surface`].
+    pub fn destroy_offscreen_surface(
+        &self,
+        context: &mut Context,
+        surface: &mut OffscreenSurface,
+    ) -> Result<(), Error> {
+        let egl_display = self.native_connection.egl_display;
+        let context = context.wayland()?;
+        let surface: &mut PbufferSurface = surface.try_into()?;
+        surface.0.destroy(&context.1, egl_display, context.0.id)
+    }
+
+    fn destroy_surface(&self, context: &mut Context, surface: &mut Surface) -> Result<(), Error> {
+        match surface {
+            Surface::Window(surface) => self.destroy_window_surface(context, surface),
+            Surface::Offscreen(surface) => self.destroy_offscreen_surface(context, surface),
+        }
     }
 
     /// Destroys a surface texture and returns the underlying surface.
@@ -485,7 +479,7 @@ impl WaylandDevice {
         &self,
         context: &mut Context,
         surface_texture: SurfaceTexture,
-    ) -> Result<Surface, (Error, SurfaceTexture)> {
+    ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         let concrete_context = match context.wayland() {
             Ok(concrete_context) => concrete_context,
             Err(error) => return Err((error, surface_texture)),
@@ -493,44 +487,38 @@ impl WaylandDevice {
         let surface_texture: WaylandSurfaceTexture = surface_texture.try_into()?;
 
         match self.temporarily_make_context_current(context) {
-            Ok(_guard) => Ok(WaylandSurface(EGLBackedSurface::Buffer(
-                surface_texture.0.destroy(&concrete_context.1),
-            ))
-            .into()),
+            Ok(_guard) => Ok(PbufferSurface(surface_texture.0.destroy(&concrete_context.1)).into()),
             Err(err) => Err((err, surface_texture.into())),
         }
     }
 
-    /// Displays the contents of a widget surface on screen.
+    /// Displays the contents of a window surface on screen.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't show up in their
+    /// Window surfaces are internally double-buffered, so changes to them don't show up in their
     /// associated widgets until this method is called.
     ///
     /// The supplied context must match the context the surface was created with, or an
     /// `IncompatibleSurface` error is returned.
-    pub fn present_surface(&self, context: &Context, surface: &mut Surface) -> Result<(), Error> {
+    pub fn present_surface(
+        &self,
+        context: &Context,
+        surface: &mut WindowSurface,
+    ) -> Result<(), Error> {
         let context = context.wayland()?;
-        let surface: &mut WaylandSurface = surface.try_into()?;
-        surface
-            .0
-            .present(self.native_connection.egl_display, context.0.egl_context)
+        let WaylandWindowSurface(surface): &mut WaylandWindowSurface = surface.try_into()?;
+        surface.present(self.native_connection.egl_display, context.0.egl_context)
     }
 
-    /// Resizes a widget surface.
+    /// Resizes a window surface.
     pub fn resize_surface(
         &self,
         _context: &Context,
-        surface: &mut Surface,
+        surface: &mut WindowSurface,
         size: Size2D<i32>,
     ) -> Result<(), Error> {
-        let surface: &mut WaylandSurface = surface.try_into()?;
-        match surface.0 {
-            EGLBackedSurface::Window(ref mut surface) => {
-                surface.resize_for_wayland(size);
-                Ok(())
-            }
-            EGLBackedSurface::Buffer(_) => Err(Error::NoWidgetAttached),
-        }
+        let WaylandWindowSurface(surface): &mut WaylandWindowSurface = surface.try_into()?;
+        surface.resize_for_wayland(size);
+        Ok(())
     }
 
     /// Returns a pointer to the underlying surface data for reading or writing by the CPU.
@@ -547,15 +535,16 @@ impl WaylandDevice {
         SURFACE_GL_TEXTURE_TARGET
     }
 
-    /// Returns various information about the surface, including the framebuffer object needed to
-    /// render to this surface.
-    ///
-    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
-    /// on the framebuffer object returned by this function. This framebuffer object may or not be
-    /// 0, the default framebuffer, depending on platform.
-    pub fn surface_info(&self, surface: &Surface) -> SurfaceInfo {
-        let surface = surface.wayland().expect("Incompatible surface type");
-        surface.0.info()
+    /// See [`crate::Device::window_surface_info`].
+    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
+        let WaylandWindowSurface(surface) = surface.wayland().expect("Incompatible surface type");
+        surface.info()
+    }
+
+    /// See [`crate::Device::offscreen_surface_info`].
+    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
+        let PbufferSurface(surface) = surface.pbuffer().expect("Incompatible surface type");
+        surface.info()
     }
 
     /// Returns the OpenGL texture object containing the contents of this surface.
@@ -564,5 +553,12 @@ impl WaylandDevice {
     #[inline]
     pub fn surface_texture_object(&self, surface_texture: &SurfaceTexture) -> Option<Texture> {
         surface_texture.wayland().ok()?.0.texture_object
+    }
+}
+
+fn egl_surface_into_surface(surface: EGLBackedSurface) -> Surface {
+    match surface {
+        EGLBackedSurface::Window(surface) => Surface::Window(WaylandWindowSurface(surface).into()),
+        EGLBackedSurface::Buffer(surface) => Surface::Offscreen(PbufferSurface(surface).into()),
     }
 }

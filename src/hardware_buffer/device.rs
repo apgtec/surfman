@@ -8,10 +8,15 @@ use crate::base::egl::error::ToWindowingApiError;
 use crate::base::egl::surface::ExternalEGLSurfaces;
 use crate::context::{ContextID, CREATE_CONTEXT_MUTEX};
 use crate::egl::types::{EGLConfig, EGLDisplay, EGLint};
-use crate::hardware_buffer::surface::HardwareBufferSurface;
+use crate::hardware_buffer::surface::{
+    buffer_surface, window_surface, HardwareBufferSurface, PlatformBufferSurface,
+    PlatformWindowSurface,
+};
 use crate::surface::Framebuffer;
 use crate::Adapter;
-use crate::{egl, ContextDescriptor, EglContextDescriptor, Surface};
+use crate::{
+    egl, ContextDescriptor, EglContextDescriptor, OffscreenSurface, Surface, WindowSurface,
+};
 use crate::{Context, ContextAttributes, Error, GLApi, Gl, SurfaceInfo};
 use euclid::default::Size2D;
 use glow::HasContext;
@@ -359,9 +364,9 @@ impl HardwareBufferDevice {
     }
 
     /// Displays the contents of the currently bound surface to the screen, if
-    /// it is a widget surface.
+    /// it is a window surface.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't
+    /// Window surfaces are internally double-buffered, so changes to them don't
     /// show up in their associated widgets until this method is called.
     pub fn present_bound_surface(&self, context: &mut Context) -> Result<(), Error> {
         let context = context.hardware_buffer()?;
@@ -374,7 +379,7 @@ impl HardwareBufferDevice {
         }
     }
 
-    /// If the currently bound surface is a widget surface, resize it,
+    /// If the currently bound surface is a window surface, resize it,
     pub fn resize_bound_surface(
         &self,
         context: &mut Context,
@@ -387,40 +392,41 @@ impl HardwareBufferDevice {
         Ok(())
     }
 
-    /// Destroys a surface.
-    ///
-    /// The supplied context must be the context the surface is associated with, or this returns
-    /// an `IncompatibleSurface` error.
-    ///
-    /// You must explicitly call this method to dispose of a surface. Otherwise, a panic occurs in
-    /// the `drop` method.
-    pub fn destroy_surface(
+    /// See [`crate::Device::destroy_window_surface`].
+    pub fn destroy_window_surface(
         &self,
         context: &mut Context,
-        surface: &mut Surface,
+        surface: &mut WindowSurface,
     ) -> Result<(), Error> {
         let context: &mut HardwareBufferContext = context.try_into()?;
-        let surface: &mut HardwareBufferSurface = surface.try_into()?;
-        match surface {
-            HardwareBufferSurface::Window(surface) => {
-                self.destroy_native_window_surface(context, &mut surface.0)
-            }
-            HardwareBufferSurface::Buffer(surface) => {
-                self.destroy_native_buffer_surface(context, &mut surface.0)
-            }
-        }
+        let surface: &mut PlatformWindowSurface = surface.try_into()?;
+        self.destroy_native_window_surface(context, &mut surface.0)
     }
 
-    /// Returns various information about the surface, including the framebuffer object needed to
-    /// render to this surface.
-    ///
-    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
-    /// on the framebuffer object returned by this function. This framebuffer object may or not be
-    /// 0, the default framebuffer, depending on platform.
-    pub fn surface_info(&self, surface: &Surface) -> SurfaceInfo {
-        surface
-            .hardware_buffer()
+    /// See [`crate::Device::destroy_offscreen_surface`].
+    pub fn destroy_offscreen_surface(
+        &self,
+        context: &mut Context,
+        surface: &mut OffscreenSurface,
+    ) -> Result<(), Error> {
+        let context: &mut HardwareBufferContext = context.try_into()?;
+        let surface: &mut PlatformBufferSurface = surface.try_into()?;
+        self.destroy_native_buffer_surface(context, &mut surface.0)
+    }
+
+    /// See [`crate::Device::window_surface_info`].
+    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
+        window_surface(surface)
             .expect("Incompatible surface type")
+            .0
+            .info()
+    }
+
+    /// See [`crate::Device::offscreen_surface_info`].
+    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
+        buffer_surface(surface)
+            .expect("Incompatible surface type")
+            .0
             .info()
     }
 

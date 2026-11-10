@@ -2,8 +2,9 @@
 
 use crate::base::io_surface::surface::Surface as SystemSurface;
 use crate::context::ContextID;
+use crate::macos::surface::{IoSurfaceBinding, IoSurfaceSurface};
 use crate::renderbuffers::Renderbuffers;
-use crate::{gl, SurfaceID, SurfaceInfo};
+use crate::{gl, OffscreenSurface, Surface, SurfaceID, SurfaceInfo};
 use cgl::{kCGLNoError, CGLErrorString, CGLGetCurrentContext, CGLTexImageIOSurface2D, GLenum};
 use glow::Context as Gl;
 
@@ -27,12 +28,62 @@ pub struct CglSurface {
 
 /// An implementation of [`crate::SurfaceTexture`] for CGL platforms.
 pub struct CglSurfaceTexture {
-    pub(crate) surface: CglSurface,
+    pub(crate) surface: IoSurfaceSurface,
     pub(crate) texture_object: Option<Texture>,
     pub(crate) phantom: PhantomData<*const ()>,
 }
 
 unsafe impl Send for CglSurface {}
+
+/// An implementation of [`crate::WindowSurface`] for CGL platforms, displayed in an AppKit view.
+#[derive(Debug)]
+pub struct CglWindowSurface(pub(crate) CglSurface);
+
+/// A surface bound to a CGL context.
+pub(crate) enum CglBoundSurface {
+    Window(CglWindowSurface),
+    Buffer(CglSurface),
+}
+
+impl CglBoundSurface {
+    pub(crate) fn surface(&self) -> &CglSurface {
+        match self {
+            CglBoundSurface::Window(CglWindowSurface(surface)) => surface,
+            CglBoundSurface::Buffer(surface) => surface,
+        }
+    }
+
+    pub(crate) fn surface_mut(&mut self) -> &mut CglSurface {
+        match self {
+            CglBoundSurface::Window(CglWindowSurface(surface)) => surface,
+            CglBoundSurface::Buffer(surface) => surface,
+        }
+    }
+}
+
+impl From<CglBoundSurface> for Surface {
+    fn from(surface: CglBoundSurface) -> Surface {
+        match surface {
+            CglBoundSurface::Window(surface) => Surface::Window(surface.into()),
+            CglBoundSurface::Buffer(surface) => Surface::Offscreen(surface.into()),
+        }
+    }
+}
+
+impl From<CglSurface> for IoSurfaceSurface {
+    fn from(surface: CglSurface) -> IoSurfaceSurface {
+        IoSurfaceSurface {
+            io_surface: surface.system_surface.io_surface.clone(),
+            binding: IoSurfaceBinding::Cgl(surface),
+        }
+    }
+}
+
+impl From<CglSurface> for OffscreenSurface {
+    fn from(surface: CglSurface) -> OffscreenSurface {
+        IoSurfaceSurface::from(surface).into()
+    }
+}
 
 impl Debug for CglSurface {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

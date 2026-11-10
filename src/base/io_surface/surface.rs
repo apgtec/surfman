@@ -2,7 +2,7 @@
 
 use super::device::Device;
 use super::ffi::{kIOMapDefaultCache, kIOMapWriteCombineCache};
-use crate::{Error, SurfaceAccess, SurfaceID, SurfaceType};
+use crate::{Error, SurfaceAccess, SurfaceID};
 
 use euclid::default::Size2D;
 use libc::KERN_SUCCESS;
@@ -14,7 +14,7 @@ use objc2_core_foundation::{
     kCFAllocatorDefault, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks,
     CFDictionary, CFIndex, CFNumber, CFRetained, CFString, CGPoint, CGRect, CGSize,
 };
-use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{RawWindowHandle, WindowHandle};
 // CVDisplayLink is deprecated, but the replaced APIs are only available
 // on newer OS versions.
 #[allow(deprecated)]
@@ -42,9 +42,9 @@ const BYTES_PER_PIXEL: i32 = 4;
 /// Represents a hardware buffer of pixels that can be rendered to via the CPU or GPU and either
 /// displayed in a native widget or bound to a texture for reading.
 ///
-/// Surfaces come in two varieties: generic and widget surfaces. Generic surfaces can be bound to a
+/// Surfaces come in two varieties: generic and window surfaces. Generic surfaces can be bound to a
 /// texture but cannot be displayed in a widget (without using other APIs such as Core Animation,
-/// DirectComposition, or XPRESENT). Widget surfaces are the opposite: they can be displayed in a
+/// DirectComposition, or XPRESENT). Window surfaces are the opposite: they can be displayed in a
 /// widget but not bound to a texture.
 ///
 /// Depending on the platform, each surface may be internally double-buffered.
@@ -103,39 +103,50 @@ pub struct SurfaceDataGuard<'a> {
 }
 
 impl Device {
-    /// Creates either a generic or a widget surface, depending on the supplied surface type.
-    pub fn create_surface(
+    /// Creates a surface displayed in an `NSView`.
+    pub fn create_window_surface(
         &self,
         access: SurfaceAccess,
-        surface_type: SurfaceType<'_>,
+        window_handle: WindowHandle<'_>,
     ) -> Result<Surface, Error> {
-        let (view_info, size) = match surface_type {
-            SurfaceType::Generic { size } => (None, size),
-            SurfaceType::Widget { window_handle, .. } => {
-                let RawWindowHandle::AppKit(handle) = window_handle.as_raw() else {
-                    return Err(Error::IncompatibleSurfaceType);
-                };
-
-                assert!(
-                    MainThreadMarker::new().is_some(),
-                    "NSView is only usable on the main thread"
-                );
-
-                // SAFETY: The pointer is valid for as long as the handle is,
-                // and we just checked that we're on the main thread.
-                let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
-                let (view_info, size) = unsafe { self.create_view_info(access, view) };
-                (Some(view_info), size)
-            }
+        let RawWindowHandle::AppKit(handle) = window_handle.as_raw() else {
+            return Err(Error::IncompatibleSurfaceType);
         };
 
-        Ok(Surface {
+        assert!(
+            MainThreadMarker::new().is_some(),
+            "NSView is only usable on the main thread"
+        );
+
+        // SAFETY: The pointer is valid for as long as the handle is,
+        // and we just checked that we're on the main thread.
+        let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+        let (view_info, size) = unsafe { self.create_view_info(access, view) };
+        Ok(self.create_surface(access, size, Some(view_info)))
+    }
+
+    /// Creates an offscreen surface.
+    pub fn create_offscreen_surface(
+        &self,
+        access: SurfaceAccess,
+        size: Size2D<i32>,
+    ) -> Result<Surface, Error> {
+        Ok(self.create_surface(access, size, None))
+    }
+
+    fn create_surface(
+        &self,
+        access: SurfaceAccess,
+        size: Size2D<i32>,
+        view_info: Option<ViewInfo>,
+    ) -> Surface {
+        Surface {
             io_surface: self.create_io_surface(&size, access),
             size,
             access,
             destroyed: false,
             view_info,
-        })
+        }
     }
 
     pub(crate) fn set_surface_flipped(&self, surface: &mut Surface, flipped: bool) {
@@ -250,15 +261,15 @@ impl Device {
         Ok(())
     }
 
-    /// Displays the contents of a widget surface on screen.
+    /// Displays the contents of a window surface on screen.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't show up in their
+    /// Window surfaces are internally double-buffered, so changes to them don't show up in their
     /// associated widgets until this method is called.
     pub fn present_surface(&self, surface: &mut Surface) -> Result<(), Error> {
         surface.present()
     }
 
-    /// Resizes a widget surface
+    /// Resizes a window surface
     pub fn resize_surface(
         &self,
         surface: &mut Surface,

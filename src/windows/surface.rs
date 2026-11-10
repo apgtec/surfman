@@ -11,7 +11,7 @@ use std::fmt::{self, Debug, Formatter};
 use winapi::shared::ntdef::HANDLE;
 use winapi::shared::windef::HWND;
 
-/// An offscreen surface backed by a Direct3D 11 texture.
+/// An implementation of [`crate::OffscreenSurface`] backed by a Direct3D 11 texture.
 ///
 /// The texture can be opened by other Direct3D 11 devices through its DXGI share handle.
 pub struct Direct3dSurface {
@@ -29,7 +29,7 @@ pub(crate) enum Direct3dBinding {
     Wgl(WglBufferBinding),
 }
 
-/// A surface displayed in a Win32 window.
+/// An implementation of [`crate::WindowSurface`] for a Win32 window.
 pub struct Win32Surface {
     pub(crate) size: Size2D<i32>,
     pub(crate) context_id: ContextID,
@@ -96,6 +96,10 @@ impl Win32Surface {
     #[inline]
     pub fn window(&self) -> HWND {
         self.window
+    }
+
+    pub(crate) fn resize(&mut self, size: Size2D<i32>) {
+        self.size = size;
     }
 
     pub(crate) fn id(&self) -> SurfaceID {

@@ -1,7 +1,7 @@
 //! Wrapper for Core OpenGL contexts.
 
 use super::ffi::{CGLReleaseContext, CGLRetainContext};
-use crate::cgl::surface::CglSurface;
+use crate::cgl::surface::CglBoundSurface;
 use crate::context::ContextID;
 use crate::surface::Framebuffer;
 use crate::{Error, Gl};
@@ -17,7 +17,7 @@ use std::thread;
 pub struct CglContext {
     pub(crate) cgl_context: CGLContextObj,
     pub(crate) id: ContextID,
-    pub(crate) framebuffer: Framebuffer<CglSurface, ()>,
+    pub(crate) framebuffer: Framebuffer<CglBoundSurface, ()>,
     pub(crate) gl: Rc<Gl>,
 }
 

@@ -49,7 +49,7 @@ pub enum Error {
     SurfaceImportFailed(WindowingApiError),
     /// The system couldn't create a surface texture from a surface.
     SurfaceTextureCreationFailed(WindowingApiError),
-    /// The system couldn't present a widget surface.
+    /// The system couldn't present a window surface.
     PresentFailed(WindowingApiError),
     /// A context couldn't be created because there is no current context.
     NoCurrentContext,

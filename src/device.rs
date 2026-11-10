@@ -2,8 +2,8 @@
 
 use crate::macros::{dispatch, enum_conversion};
 use crate::{
-    Adapter, Context, ContextAttributes, ContextDescriptor, ContextID, Error, GLApi, Surface,
-    SurfaceAccess, SurfaceInfo, SurfaceTexture, SurfaceType,
+    Adapter, Context, ContextAttributes, ContextDescriptor, ContextID, Error, GLApi,
+    OffscreenSurface, Surface, SurfaceAccess, SurfaceInfo, SurfaceTexture, WindowSurface,
 };
 use euclid::default::Size2D;
 use glow::Texture;
@@ -167,13 +167,17 @@ impl Device {
     /// If this function is called with a surface already bound, the previously bound surface is
     /// is returned, otherwise `None`.
     ///
+    /// Either a [`WindowSurface`] or an [`OffscreenSurface`] (or a [`Surface`] wrapping one) can
+    /// be bound.
+    ///
     /// If an error is returned, the surface argument is returned alongside it.
     #[must_use]
     pub fn bind_surface_to_context(
         &self,
         context: &mut Context,
-        surface: Surface,
+        surface: impl Into<Surface>,
     ) -> Result<Option<Surface>, (Error, Surface)> {
+        let surface = surface.into();
         dispatch!(Device, self, device => device.bind_surface_to_context(context, surface))
     }
 
@@ -206,18 +210,16 @@ impl Device {
     /// Creates a surface for a native window.
     ///
     /// Only the given context may ever render to the surface.
-    pub fn create_window_surface<'a>(
+    pub fn create_window_surface(
         &self,
         context: &Context,
         surface_access: SurfaceAccess,
-        window_handle: WindowHandle<'a>,
+        window_handle: WindowHandle<'_>,
         size: Size2D<i32>,
-    ) -> Result<Surface, Error> {
-        let surface_type = SurfaceType::Widget {
-            window_handle,
-            size,
-        };
-        dispatch!(Device, self, device => device.create_surface(context, surface_access, surface_type))
+    ) -> Result<WindowSurface, Error> {
+        dispatch!(Device, self, device => {
+            device.create_window_surface(context, surface_access, window_handle, size)
+        })
     }
 
     /// Creates an offscreen surface.
@@ -229,12 +231,13 @@ impl Device {
         context: &Context,
         surface_access: SurfaceAccess,
         size: Size2D<i32>,
-    ) -> Result<Surface, Error> {
-        let surface_type = SurfaceType::Generic { size };
-        dispatch!(Device, self, device => device.create_surface(context, surface_access, surface_type))
+    ) -> Result<OffscreenSurface, Error> {
+        dispatch!(Device, self, device => {
+            device.create_offscreen_surface(context, surface_access, size)
+        })
     }
 
-    /// Creates a surface texture from an existing generic surface for use with the given context.
+    /// Creates a surface texture from an existing offscreen surface for use with the given context.
     ///
     /// The surface texture is local to the supplied context and takes ownership of the surface.
     /// Destroying the surface texture allows you to retrieve the surface again.
@@ -242,29 +245,54 @@ impl Device {
     /// *The supplied context does not have to be the same context that the surface is associated
     /// with.* This allows you to render to a surface in one context and sample from that surface
     /// in another context.
-    ///
-    /// Calling this method on a widget surface returns a `WidgetAttached` error.
     pub fn create_surface_texture(
         &self,
         context: &mut Context,
-        surface: Surface,
-    ) -> Result<SurfaceTexture, (Error, Surface)> {
+        surface: OffscreenSurface,
+    ) -> Result<SurfaceTexture, (Error, OffscreenSurface)> {
         dispatch!(Device, self, device => device.create_surface_texture(context, surface))
     }
 
-    /// Destroys a surface.
+    /// Destroys a window surface.
     ///
     /// The supplied context must be the context the surface is associated with, or this returns
     /// an `IncompatibleSurface` error.
     ///
     /// You must explicitly call this method to dispose of a surface. Otherwise, a panic occurs in
     /// the `drop` method.
-    pub fn destroy_surface(
+    pub fn destroy_window_surface(
+        &self,
+        context: &mut Context,
+        surface: &mut WindowSurface,
+    ) -> Result<(), Error> {
+        dispatch!(Device, self, device => device.destroy_window_surface(context, surface))
+    }
+
+    /// Destroys a offscreen surface.
+    ///
+    /// The supplied context must be the context the surface is associated with, or this returns
+    /// an `IncompatibleSurface` error.
+    ///
+    /// You must explicitly call this method to dispose of a surface. Otherwise, a panic occurs in
+    /// the `drop` method.
+    pub fn destroy_offscreen_surface(
+        &self,
+        context: &mut Context,
+        surface: &mut OffscreenSurface,
+    ) -> Result<(), Error> {
+        dispatch!(Device, self, device => device.destroy_offscreen_surface(context, surface))
+    }
+
+    /// Destroys a surface of either kind, such as one returned by `unbind_surface_from_context`.
+    pub(crate) fn destroy_surface(
         &self,
         context: &mut Context,
         surface: &mut Surface,
     ) -> Result<(), Error> {
-        dispatch!(Device, self, device => device.destroy_surface(context, surface))
+        match surface {
+            Surface::Window(surface) => self.destroy_window_surface(context, surface),
+            Surface::Offscreen(surface) => self.destroy_offscreen_surface(context, surface),
+        }
     }
 
     /// Destroys a surface texture and returns the underlying surface.
@@ -278,7 +306,7 @@ impl Device {
         &self,
         context: &mut Context,
         surface_texture: SurfaceTexture,
-    ) -> Result<Surface, (Error, SurfaceTexture)> {
+    ) -> Result<OffscreenSurface, (Error, SurfaceTexture)> {
         dispatch!(Device, self, device => device.destroy_surface_texture(context, surface_texture))
     }
 
@@ -290,26 +318,30 @@ impl Device {
     }
 
     /// Displays the contents of the currently bound surface to the screen, if
-    /// it is a widget surface.
+    /// it is a window surface.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't
+    /// Window surfaces are internally double-buffered, so changes to them don't
     /// show up in their associated widgets until this method is called.
     pub fn present_bound_surface(&self, context: &mut Context) -> Result<(), Error> {
         dispatch!(Device, self, device => device.present_bound_surface(context))
     }
 
-    /// Displays the contents of a widget surface on screen.
+    /// Displays the contents of a window surface on screen.
     ///
-    /// Widget surfaces are internally double-buffered, so changes to them don't show up in their
+    /// Window surfaces are internally double-buffered, so changes to them don't show up in their
     /// associated widgets until this method is called.
     ///
     /// The supplied context must match the context the surface was created with, or an
     /// `IncompatibleSurface` error is returned.
-    pub fn present_surface(&self, context: &Context, surface: &mut Surface) -> Result<(), Error> {
+    pub fn present_surface(
+        &self,
+        context: &Context,
+        surface: &mut WindowSurface,
+    ) -> Result<(), Error> {
         dispatch!(Device, self, device => device.present_surface(context, surface))
     }
 
-    /// If the currently bound surface is a widget surface, resize it,
+    /// If the currently bound surface is a window surface, resize it,
     pub fn resize_bound_surface(
         &self,
         context: &mut Context,
@@ -318,24 +350,42 @@ impl Device {
         dispatch!(Device, self, device => device.resize_bound_surface(context, size))
     }
 
-    /// Resizes a widget surface.
+    /// Resizes a window surface.
     pub fn resize_surface(
         &self,
         context: &Context,
-        surface: &mut Surface,
+        surface: &mut WindowSurface,
         size: Size2D<i32>,
     ) -> Result<(), Error> {
         dispatch!(Device, self, device => device.resize_surface(context, surface, size))
     }
 
-    /// Returns various information about the surface, including the framebuffer object needed to
-    /// render to this surface.
+    /// Returns various information about a window surface, including the framebuffer object
+    /// needed to render to this surface.
     ///
     /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
     /// on the framebuffer object returned by this function. This framebuffer object may or not be
     /// 0, the default framebuffer, depending on platform.
-    pub fn surface_info(&self, surface: &Surface) -> SurfaceInfo {
-        dispatch!(Device, self, device => device.surface_info(surface))
+    pub fn window_surface_info(&self, surface: &WindowSurface) -> SurfaceInfo {
+        dispatch!(Device, self, device => device.window_surface_info(surface))
+    }
+
+    /// Returns various information about a offscreen surface, including the framebuffer object
+    /// needed to render to this surface.
+    ///
+    /// Before rendering to a surface attached to a context, you must call `glBindFramebuffer()`
+    /// on the framebuffer object returned by this function. This framebuffer object may or not be
+    /// 0, the default framebuffer, depending on platform.
+    pub fn offscreen_surface_info(&self, surface: &OffscreenSurface) -> SurfaceInfo {
+        dispatch!(Device, self, device => device.offscreen_surface_info(surface))
+    }
+
+    /// Returns information about a surface of either kind.
+    pub(crate) fn surface_info(&self, surface: &Surface) -> SurfaceInfo {
+        match surface {
+            Surface::Window(surface) => self.window_surface_info(surface),
+            Surface::Offscreen(surface) => self.offscreen_surface_info(surface),
+        }
     }
 
     /// Returns the OpenGL texture object containing the contents of this surface.

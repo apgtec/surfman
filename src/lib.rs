@@ -32,6 +32,8 @@ mod gl_utils;
 #[cfg(any(android_platform, ohos_platform))]
 pub mod hardware_buffer;
 mod info;
+#[cfg(macos_platform)]
+pub mod macos;
 pub mod macros;
 #[cfg(free_unix)]
 pub mod mesa_surfaceless;
@@ -53,7 +55,9 @@ pub use crate::context_descriptor::ContextDescriptor;
 pub use crate::device::Device;
 pub use crate::error::{Error, WindowingApiError};
 pub use crate::info::{GLApi, GLVersion};
-pub use crate::surface::{Surface, SurfaceAccess, SurfaceID, SurfaceInfo, SurfaceType};
+pub use crate::surface::{
+    OffscreenSurface, Surface, SurfaceAccess, SurfaceID, SurfaceInfo, WindowSurface,
+};
 pub use crate::surface_texture::SurfaceTexture;
 pub use adapter::{Adapter, AdapterPreferences, PowerPreference, RenderingPreference};
 pub(crate) use glow::{self as gl, Context as Gl};
